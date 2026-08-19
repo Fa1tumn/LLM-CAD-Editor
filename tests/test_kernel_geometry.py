@@ -23,9 +23,10 @@ import FreeCAD  # noqa: E402
 def close_freecad_documents():
     """Close every document a test opens, so each backend gets a fresh one.
 
-    `FreeCAD.newDocument("LLMCAD")` does not collide — FreeCAD uniquifies the
-    name (LLMCAD, LLMCAD1, ...) — but the documents leak for the whole session,
-    so tear them down to keep tests hermetic.
+    `compile_program` closes a backend it mints itself, but `build()` passes its
+    own, and a caller-supplied backend is deliberately left open. Those documents
+    would otherwise survive the whole session, so tear them down here to keep the
+    tests hermetic.
     """
     before = set(FreeCAD.listDocuments())
     yield
@@ -434,3 +435,90 @@ def test_reset_clears_state_without_closing_the_document():
     assert backend.objects == {}
     assert backend.axes == {}
     assert backend.doc.Objects == []
+
+
+# --- document lifecycle (issue #9) ----------------------------------------------
+
+
+def _open_docs():
+    return set(FreeCAD.listDocuments())
+
+
+def test_compile_program_closes_the_backend_it_mints():
+    """Every FreeCADBackend() used to leak a document for the life of the process."""
+    before = _open_docs()
+    for _ in range(5):
+        compile_program(parse("sk = sketch(plane=XY, rect=[w=2, h=3]);\nb = extrude(profile=sk, length=4);"))
+    assert _open_docs() == before
+
+
+def test_a_failed_compile_also_closes_its_document():
+    """Failed compiles leaked too — exactly the shape of a self-repair loop."""
+    from dsl.compiler import CompileError
+
+    before = _open_docs()
+    for _ in range(5):
+        with pytest.raises(CompileError):
+            compile_program(
+                parse(
+                    "sk = sketch(plane=XY, circle=[center=origin, r=0]);\nb = extrude(profile=sk, length=3);"
+                )
+            )
+    assert _open_docs() == before
+
+
+def test_the_returned_shape_outlives_the_closed_document():
+    """Closing the document must not invalidate the solid the caller was handed.
+
+    OCCT reference-counts shapes, so this holds — but it is the assumption that
+    makes closing safe at all, so pin it.
+    """
+    shape = compile_program(
+        parse("sk = sketch(plane=XY, rect=[w=2, h=3]);\nb = extrude(profile=sk, length=4);")
+    )
+    assert shape.Volume == pytest.approx(24.0)
+    assert shape.isValid()
+    assert _extents(shape) == pytest.approx((0.0, 0.0, 0.0, 2.0, 3.0, 4.0))
+
+
+def test_a_caller_supplied_backend_is_not_closed():
+    """Ownership: compile_program releases only the backend it created itself."""
+    backend = FreeCADBackend()
+    try:
+        compile_program(
+            parse("sk = sketch(plane=XY, rect=[w=2, h=3]);\nb = extrude(profile=sk, length=4);"), backend
+        )
+        assert backend.doc is not None
+        assert [obj.Name for obj in backend.doc.Objects] == ["b"]
+    finally:
+        backend.close()
+
+
+def test_backend_is_a_context_manager():
+    before = _open_docs()
+    with FreeCADBackend() as backend:
+        compile_program(
+            parse("sk = sketch(plane=XY, rect=[w=2, h=3]);\nb = extrude(profile=sk, length=4);"), backend
+        )
+        assert backend.doc is not None
+    assert backend.doc is None
+    assert _open_docs() == before
+
+
+def test_close_is_idempotent():
+    backend = FreeCADBackend()
+    backend.close()
+    backend.close()  # must not raise
+    assert backend.doc is None
+    assert backend.objects == {}
+
+
+def test_using_a_closed_backend_fails_with_a_clear_message():
+    from dsl.compiler import CompileError
+
+    backend = FreeCADBackend()
+    backend.close()
+    with pytest.raises(CompileError, match="has been closed"):
+        compile_program(
+            parse("sk = sketch(plane=XY, rect=[w=2, h=3]);\nb = extrude(profile=sk, length=4);"), backend
+        )

@@ -24,6 +24,7 @@ _PLANE_AXES: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
 
 class Backend(Protocol):
     def reset(self) -> None: ...
+    def close(self) -> None: ...
     def feature(self, name: str, op: str, args: dict[str, Any]) -> Any: ...
     def edit(self, target: str, field_name: str, value: Any) -> None: ...
     def replace(self, target: str, op: str, args: dict[str, Any]) -> Any: ...
@@ -52,6 +53,9 @@ class SymbolicBackend:
     def reset(self) -> None:
         """Drop all state, so one backend can compile successive programs independently."""
         self.model = SymbolicModel()
+
+    def close(self) -> None:
+        """No kernel resources to release; present so the Backend protocol is uniform."""
 
     def feature(self, name: str, op: str, args: dict[str, Any]) -> SymbolicFeature:
         feature = SymbolicFeature(name, op, deepcopy(args))
@@ -103,11 +107,34 @@ class FreeCADBackend:
         registry does not, so a later program could return an earlier program's
         solid and leave superseded objects orphaned in the document.
         """
+        if self.doc is None:
+            raise CompileError("this FreeCADBackend has been closed")
         for name in list(self.objects):
             obj = self.objects.pop(name)
             if hasattr(obj, "Shape"):
                 self.doc.removeObject(obj.Name)
         self.axes.clear()
+
+    def close(self) -> None:
+        """Release the FreeCAD document. Idempotent.
+
+        Shapes already returned stay valid — OCCT reference-counts them — so a
+        caller can keep the compiled solid after the backend is gone. Without
+        this, every backend leaked a document for the life of the process, and
+        `newDocument` scans the open-document list to uniquify names, so backend
+        construction slowed as the leak grew.
+        """
+        if self.doc is not None:
+            self.FreeCAD.closeDocument(self.doc.Name)
+            self.doc = None
+        self.objects.clear()
+        self.axes.clear()
+
+    def __enter__(self) -> FreeCADBackend:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
 
     @staticmethod
     def _number(value: Any) -> float:
@@ -278,6 +305,8 @@ def _whole_feature(value: Any, op: str) -> str:
 
 def compile_program(prog: Program, backend: Backend | None = None) -> Any:
     """Validate references and execute statements in source order."""
+    # A backend we mint here is ours to release; one the caller passed in is not.
+    owned = backend is None
     active_backend: Backend = backend if backend is not None else FreeCADBackend()
     # The registry is rebuilt per call, so the backend must start clean too — otherwise
     # a reused backend disagrees with it about which features exist.
@@ -306,3 +335,7 @@ def compile_program(prog: Program, backend: Backend | None = None) -> Any:
         raise
     except Exception as exc:
         raise CompileError(f"backend execution failed: {exc}") from exc
+    finally:
+        # Failed compiles leaked too, which is exactly the shape of a self-repair loop.
+        if owned:
+            active_backend.close()
