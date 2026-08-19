@@ -1,0 +1,16 @@
+{
+  "name": "shaft-10step",
+  "steps": [
+    "sk = sketch(plane=XY, circle=[center=origin, r=20]); body = extrude(profile=sk, length=200);",
+    "edit(target=body, set=length, value=250);",
+    "h1 = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180);",
+    "p1 = pattern(feature=h1, type=circular, count=4, angle=90);",
+    "replace(target=body, with=extrude(profile=sk, length=250));",
+    "edit(target=h1, set=depth, value=160);",
+    "m1 = mirror(feature=h1, plane=YZ);",
+    "c1 = constraint(type=dim, on=body, value=250);",
+    "edit(target=p1, set=count, value=6);",
+    "chamfer(on=body.edge_top, dist=1.5);"
+  ],
+  "expected": {"step_count": 10, "ref_break_rate": 0.0}
+}

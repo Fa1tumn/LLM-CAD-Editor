@@ -1,0 +1,29 @@
+# core
+pyyaml>=6.0
+numpy>=1.24
+
+# testing
+pytest>=8.0
+
+# CAD kernel — install FreeCAD via conda or a system package; only the
+# Python side is listed here
+# FreeCAD / OCCT: install via conda (conda install -c conda-forge freecad) or system package
+# python-occ-core>=7.7    # optional, if using OCCT directly
+
+# training & inference
+torch>=2.1
+transformers>=4.40
+peft>=0.10               # LoRA fine-tuning
+accelerate>=0.28
+bitsandbytes>=0.43       # quantization (24GB single GPU)
+
+# VLM visual review — adjust per chosen model
+# qwen-vl-utils          # if using Qwen-VL
+
+# data & eval
+datasets>=2.18
+trimesh>=4.0             # mesh IoU
+shapely>=2.0            # 2D geometric rules
+
+# UI (review UI, can defer)
+# streamlit>=1.33

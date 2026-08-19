@@ -1,0 +1,40 @@
+# global config
+# all paths relative to project root
+
+model:
+  base: "Qwen2.5-Coder-7B"      # open model in the 7-14B class
+  lora_rank: 16
+  max_ctx: 8192                  # long ctx for sequential edits
+
+paths:
+  real_parts: "data/real_parts"
+  synth: "data/synth/out"
+  checkpoints: "checkpoints"
+
+# four-stage verification thresholds
+verify:
+  kernel:
+    allow_self_intersection: false
+    allow_open_shell: false
+  rules:
+    min_wall_thickness_mm: 1.0   # min wall thickness
+    min_hole_edge_dist_mm: 2.0   # hole-center to boundary
+    dim_tolerance_mm: 0.05       # instruction vs result
+  visual:
+    vlm_pass_score: 4            # 1-5 scale, pass threshold
+  repair:
+    max_self_repair: 3           # max rounds before HITL
+
+# operating tiers (proposal G5)
+operating:
+  auto_confirm_target: 0.80      # auto-confirm target
+  # param auto, compound/functional -> human
+  tiers:
+    parameter:  "auto"
+    operation:  "auto_if_pass"
+    functional: "human_required"
+
+deploy:
+  target_gpu_gb: 24
+  max_latency_s: 30
+  quantization: "int4"           # bitsandbytes / int4

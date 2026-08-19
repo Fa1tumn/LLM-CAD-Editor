@@ -1,0 +1,9 @@
+{
+  "name": "shaft-3step",
+  "steps": [
+    "sk = sketch(plane=XY, circle=[center=origin, r=20]); body = extrude(profile=sk, length=200);",
+    "edit(target=body, set=length, value=250);",
+    "h1 = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180);"
+  ],
+  "expected": {"step_count": 3, "ref_break_rate": 0.0}
+}
