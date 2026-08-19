@@ -14,6 +14,14 @@ class CompileError(Exception):
     """Parsing succeeded, but symbolic or kernel execution failed."""
 
 
+# Local (x, y) axes of each sketch plane named in grammar.md §5; the normal is x cross y.
+_PLANE_AXES: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
+    "XY": ((1, 0, 0), (0, 1, 0)),
+    "XZ": ((1, 0, 0), (0, 0, 1)),
+    "YZ": ((0, 1, 0), (0, 0, 1)),
+}
+
+
 class Backend(Protocol):
     def feature(self, name: str, op: str, args: dict[str, Any]) -> Any: ...
     def edit(self, target: str, field_name: str, value: Any) -> None: ...
@@ -79,6 +87,9 @@ class FreeCADBackend:
         self.FreeCAD, self.Part = FreeCAD, Part
         self.doc = FreeCAD.newDocument("LLMCAD")
         self.objects: dict[str, Any] = {}
+        # feature name -> (point on its axis, unit direction), so `<feature>.axis`
+        # can be resolved as a sketch anchor (grammar.md §5).
+        self.axes: dict[str, tuple[Any, Any]] = {}
 
     @staticmethod
     def _number(value: Any) -> float:
@@ -87,6 +98,62 @@ class FreeCADBackend:
         if isinstance(value, (int, float)):
             return float(value)
         raise CompileError(f"expected numeric quantity, got {value!r}")
+
+    def _plane_frame(self, plane: Any) -> Any:
+        """Rotation taking the sketch's local frame to world (grammar.md §4.1 `plane`)."""
+        name = plane.path[0] if isinstance(plane, Ref) and plane.path else "XY"
+        try:
+            local_x, local_y = _PLANE_AXES[name]
+        except KeyError:
+            raise CompileError(
+                f"unknown sketch plane: {name} (expected one of {', '.join(sorted(_PLANE_AXES))})"
+            ) from None
+        Vector, Rotation = self.FreeCAD.Vector, self.FreeCAD.Rotation
+        return Rotation(Vector(*local_x), Vector(*local_y), Vector(0, 0, 0), "ZXY")
+
+    def _resolve_anchor(self, value: Any, normal: Any) -> Any:
+        """Resolve a sketch `center=` to a world point on the sketch plane through the origin."""
+        Vector = self.FreeCAD.Vector
+        if value is None:
+            return Vector(0, 0, 0)
+        if isinstance(value, Ref):
+            root = value.path[0]
+            if root == "origin" and len(value.path) == 1:
+                return Vector(0, 0, 0)
+            if len(value.path) == 2 and value.path[1] == "axis":
+                if root not in self.axes:
+                    raise CompileError(f"cannot anchor on the axis of an unbuilt feature: {value}")
+                base, direction = self.axes[root]
+                # The anchor is where that axis meets the sketch plane (which passes
+                # through the world origin with the given normal).
+                denominator = direction.dot(normal)
+                if abs(denominator) < 1e-9:
+                    raise CompileError(f"axis {value} is parallel to the sketch plane; no anchor point")
+                return base - direction * (base.dot(normal) / denominator)
+            raise CompileError(
+                f"sketch anchor {value} is not resolvable yet; v1 supports `origin` and `<feature>.axis`"
+            )
+        raise CompileError(f"expected a sketch anchor reference, got {value!r}")
+
+    def _extrusion_direction(self, args: dict[str, Any], normal: Any) -> Any:
+        """`dir` overrides the plane normal, but only along the same axis (grammar.md §4.1)."""
+        given = args.get("dir")
+        if given is None:
+            return normal
+        if not isinstance(given, Ref) or not given.path:
+            raise CompileError(f"expected an axis reference for dir, got {given!r}")
+        try:
+            local_x, local_y = _PLANE_AXES[given.path[0]]
+        except KeyError:
+            raise CompileError(f"unknown extrude direction: {given.path[0]}") from None
+        Vector = self.FreeCAD.Vector
+        candidate = Vector(*local_x).cross(Vector(*local_y))
+        if candidate.cross(normal).Length > 1e-9:
+            raise CompileError(
+                f"oblique extrusion is not supported: dir={given.path[0]} is not parallel to the "
+                "sketch plane normal"
+            )
+        return candidate
 
     def feature(self, name: str, op: str, args: dict[str, Any]) -> Any:
         if op == "sketch":
@@ -98,16 +165,34 @@ class FreeCADBackend:
             length = self._number(args.get("length"))
             if not isinstance(sketch, dict):
                 raise CompileError(f"extrude profile is not a compiled sketch: {profile}")
+
+            rotation = self._plane_frame(sketch.get("plane"))
+            normal = rotation.multVec(self.FreeCAD.Vector(0, 0, 1))
+            direction = self._extrusion_direction(args, normal)
+
             if "circle" in sketch:
-                shape = self.Part.makeCylinder(self._number(sketch["circle"].get("r")), length)
+                circle = sketch["circle"]
+                anchor = self._resolve_anchor(circle.get("center"), normal)
+                shape = self.Part.makeCylinder(self._number(circle.get("r")), length, anchor, direction)
             elif "rect" in sketch:
                 rect = sketch["rect"]
+                anchor = self._resolve_anchor(rect.get("center"), normal)
+                # A rect is anchored by its corner, so orientation comes from the sketch
+                # frame rather than from `direction` alone.
                 shape = self.Part.makeBox(self._number(rect.get("w")), self._number(rect.get("h")), length)
+                placement = self.FreeCAD.Placement(anchor, rotation)
+                if direction.dot(normal) < 0:
+                    placement = self.FreeCAD.Placement(
+                        anchor, rotation.multiply(self.FreeCAD.Rotation(self.FreeCAD.Vector(1, 0, 0), 180))
+                    )
+                shape.Placement = placement
             else:
                 raise CompileError("FreeCAD backend currently supports circle/rect sketches")
+
             obj = self.doc.addObject("PartDesign::Feature", name)
             obj.Shape = shape
             self.objects[name] = obj
+            self.axes[name] = (obj.Shape.CenterOfMass, direction)
             return obj
         raise CompileError(f"FreeCAD backend operation not implemented: {op}")
 

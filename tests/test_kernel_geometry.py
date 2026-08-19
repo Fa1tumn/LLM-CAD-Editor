@@ -196,3 +196,98 @@ def test_zero_radius_cylinder_is_a_degenerate_but_returned_solid():
     assert shape.ShapeType == "Solid"
     assert shape.Volume == pytest.approx(0.0)
     assert not shape.isValid()  # OCCT itself flags the degenerate result
+
+
+# --- sketch placement: plane, dir and center (issues #3 / #4) -------------------
+
+
+def _extents(shape):
+    b = shape.BoundBox
+    return tuple(round(v, 6) for v in (b.XMin, b.YMin, b.ZMin, b.XMax, b.YMax, b.ZMax))
+
+
+@pytest.mark.parametrize(
+    ("plane", "expected"),
+    [
+        ("XY", (0.0, 0.0, 0.0, 1.0, 2.0, 3.0)),
+        ("XZ", (0.0, -3.0, 0.0, 1.0, 0.0, 2.0)),
+        ("YZ", (0.0, 0.0, 0.0, 3.0, 1.0, 2.0)),
+    ],
+)
+def test_sketch_plane_orients_the_solid(plane, expected):
+    """`plane` selects the sketch frame; w/h lie in it and the extrusion follows its normal.
+
+    Regression for the defect where `plane` was parsed, stored and then discarded,
+    so XY/XZ/YZ all produced the identical solid.
+    """
+    shape = build(f"sk = sketch(plane={plane}, rect=[w=1, h=2]);\nb = extrude(profile=sk, length=3);")
+    assert shape.Volume == pytest.approx(6.0)
+    assert _extents(shape) == pytest.approx(expected)
+
+
+def test_the_three_planes_produce_distinct_geometry():
+    """The bug's signature was that all three planes compared equal — pin that they do not."""
+    boxes = {
+        p: _extents(build(f"sk = sketch(plane={p}, rect=[w=1, h=2]);\nb = extrude(profile=sk, length=3);"))
+        for p in ("XY", "XZ", "YZ")
+    }
+    assert len(set(boxes.values())) == 3, boxes
+
+
+def test_circle_plane_orients_the_cylinder_axis():
+    """A cylinder's axis follows the sketch plane normal, not always +Z."""
+    shape = build("sk = sketch(plane=YZ, circle=[center=origin, r=5]);\nb = extrude(profile=sk, length=3);")
+    assert shape.Volume == pytest.approx(math.pi * 25 * 3)
+    # Extruded along +X, so X spans the length and Y/Z span the diameter.
+    assert _extents(shape) == pytest.approx((0.0, -5.0, -5.0, 3.0, 5.0, 5.0))
+
+
+def test_center_on_a_feature_axis_anchors_the_profile_there():
+    """`center=b.axis` must place the profile on b's axis, not at the global origin.
+
+    grammar.md §1.1 makes symbolic anchoring the point of the language; the defect
+    compiled `center=b.axis` and `center=origin` to identical geometry.
+    """
+    base = "base = sketch(plane=XY, rect=[w=100, h=100]);\nb = extrude(profile=base, length=10);\n"
+    on_axis = build(
+        base + "sk = sketch(plane=XY, circle=[center=b.axis, r=5]);\np = extrude(profile=sk, length=20);"
+    )
+    at_origin = build(
+        base + "sk = sketch(plane=XY, circle=[center=origin, r=5]);\np = extrude(profile=sk, length=20);"
+    )
+
+    # b spans (0,0)-(100,100), so its axis is at x=50, y=50.
+    assert _extents(on_axis) == pytest.approx((45.0, 45.0, 0.0, 55.0, 55.0, 20.0))
+    assert _extents(at_origin) == pytest.approx((-5.0, -5.0, 0.0, 5.0, 5.0, 20.0))
+    assert _extents(on_axis) != _extents(at_origin)
+
+
+def test_dir_parallel_to_the_plane_normal_is_accepted():
+    """`dir` naming the same axis as the plane normal is a no-op, not an error."""
+    with_dir = build("sk = sketch(plane=XY, rect=[w=1, h=2]);\nb = extrude(profile=sk, length=3, dir=XY);")
+    without = build("sk = sketch(plane=XY, rect=[w=1, h=2]);\nb = extrude(profile=sk, length=3);")
+    assert _extents(with_dir) == pytest.approx(_extents(without))
+
+
+def test_oblique_extrusion_is_rejected_rather_than_silently_ignored():
+    """`dir` across the sketch plane cannot be expressed yet, so it must raise.
+
+    The defect silently ignored `dir` entirely, so dir=XZ on an XY sketch produced
+    a +Z extrusion with no complaint.
+    """
+    from dsl.compiler import CompileError
+
+    with pytest.raises(CompileError, match="oblique extrusion is not supported"):
+        build("sk = sketch(plane=XY, rect=[w=1, h=2]);\nb = extrude(profile=sk, length=3, dir=XZ);")
+
+
+def test_unresolvable_anchor_raises_instead_of_defaulting_to_origin():
+    """A role the backend cannot resolve yet must fail loudly, not quietly become origin."""
+    from dsl.compiler import CompileError
+
+    base = "base = sketch(plane=XY, rect=[w=100, h=100]);\nb = extrude(profile=base, length=10);\n"
+    with pytest.raises(CompileError, match="not resolvable yet"):
+        build(
+            base
+            + "sk = sketch(plane=XY, circle=[center=b.face_top, r=5]);\np = extrude(profile=sk, length=20);"
+        )
