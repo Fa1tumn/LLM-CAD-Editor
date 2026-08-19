@@ -23,6 +23,7 @@ _PLANE_AXES: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
 
 
 class Backend(Protocol):
+    def reset(self) -> None: ...
     def feature(self, name: str, op: str, args: dict[str, Any]) -> Any: ...
     def edit(self, target: str, field_name: str, value: Any) -> None: ...
     def replace(self, target: str, op: str, args: dict[str, Any]) -> Any: ...
@@ -46,6 +47,10 @@ class SymbolicBackend:
     """Deterministic no-kernel backend for CI and reference evaluation."""
 
     def __init__(self) -> None:
+        self.model = SymbolicModel()
+
+    def reset(self) -> None:
+        """Drop all state, so one backend can compile successive programs independently."""
         self.model = SymbolicModel()
 
     def feature(self, name: str, op: str, args: dict[str, Any]) -> SymbolicFeature:
@@ -90,6 +95,19 @@ class FreeCADBackend:
         # feature name -> (point on its axis, unit direction), so `<feature>.axis`
         # can be resolved as a sketch anchor (grammar.md §5).
         self.axes: dict[str, tuple[Any, Any]] = {}
+
+    def reset(self) -> None:
+        """Drop all state, so one backend can compile successive programs independently.
+
+        Without this, `self.objects` outlives a `compile_program` call while the
+        registry does not, so a later program could return an earlier program's
+        solid and leave superseded objects orphaned in the document.
+        """
+        for name in list(self.objects):
+            obj = self.objects.pop(name)
+            if hasattr(obj, "Shape"):
+                self.doc.removeObject(obj.Name)
+        self.axes.clear()
 
     @staticmethod
     def _number(value: Any) -> float:
@@ -203,11 +221,20 @@ class FreeCADBackend:
         raise CompileError("FreeCAD replacement requires feature-history rebuild")
 
     def finish(self) -> Any:
+        """Return the whole model, fusing every solid the program built.
+
+        Returning one body would silently hand downstream measurement a fragment
+        of the described part, and which fragment would depend on declaration
+        order rather than on modelling intent.
+        """
         self.doc.recompute()
         solids = [obj.Shape for obj in self.objects.values() if hasattr(obj, "Shape")]
         if not solids:
             raise CompileError("program produced no solid")
-        return solids[-1]
+        model = solids[0]
+        for solid in solids[1:]:
+            model = model.fuse(solid)
+        return model
 
 
 def _whole_feature(value: Any, op: str) -> str:
@@ -219,6 +246,9 @@ def _whole_feature(value: Any, op: str) -> str:
 def compile_program(prog: Program, backend: Backend | None = None) -> Any:
     """Validate references and execute statements in source order."""
     active_backend: Backend = backend if backend is not None else FreeCADBackend()
+    # The registry is rebuilt per call, so the backend must start clean too — otherwise
+    # a reused backend disagrees with it about which features exist.
+    active_backend.reset()
     registry = ReferenceRegistry()
     try:
         for index, statement in enumerate(prog.statements):

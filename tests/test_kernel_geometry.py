@@ -131,7 +131,7 @@ def test_unit_suffix_is_dropped_and_the_magnitude_is_used_verbatim():
 # --- multi-statement programs ---------------------------------------------------
 
 
-def test_multi_statement_program_builds_every_solid_and_finish_returns_the_last_named():
+def test_multi_statement_program_builds_every_solid_and_finish_fuses_them():
     source = (
         "a = sketch(plane=XY, rect=[w=1, h=1]);\n"
         "b = sketch(plane=XY, circle=[center=origin, r=10]);\n"
@@ -146,26 +146,46 @@ def test_multi_statement_program_builds_every_solid_and_finish_returns_the_last_
     assert backend.objects["big"].Shape.Volume == pytest.approx(math.pi * 10**2 * 100)
     assert backend.objects["small"].Shape.Volume == pytest.approx(1.0)
 
-    # finish() returns solids[-1] by dict-insertion order — the unit cube, not the fusion.
-    assert shape.Volume == pytest.approx(1.0)
-    assert len(shape.Faces) == 6
-    assert (
-        shape.BoundBox.XLength,
-        shape.BoundBox.YLength,
-        shape.BoundBox.ZLength,
-    ) == pytest.approx((1.0, 1.0, 1.0))
-
-
-def test_finish_selection_follows_declaration_order_not_size():
-    """Same two solids, reversed declaration order -> the other one comes back."""
-    shape = build(
-        "a = sketch(plane=XY, rect=[w=1, h=1]);\n"
-        "b = sketch(plane=XY, circle=[center=origin, r=10]);\n"
-        "small = extrude(profile=a, length=1);\n"
-        "big = extrude(profile=b, length=100);"
-    )
+    # finish() returns the whole model. The unit cube sits inside the cylinder, so
+    # the fusion is the cylinder — notably NOT the sum, which would double-count it.
     assert shape.Volume == pytest.approx(math.pi * 10**2 * 100)
-    assert len(shape.Faces) == 3
+
+
+def test_finish_result_is_independent_of_declaration_order():
+    """Reversing the declaration order must not change the model that comes back.
+
+    Regression for the defect where `finish()` returned `solids[-1]`, so the same
+    two solids yielded whichever one happened to be declared last.
+    """
+    prefix = "a = sketch(plane=XY, rect=[w=1, h=1]);\nb = sketch(plane=XY, circle=[center=origin, r=10]);\n"
+    forward = build(prefix + "small = extrude(profile=a, length=1);\nbig = extrude(profile=b, length=100);")
+    reverse = build(prefix + "big = extrude(profile=b, length=100);\nsmall = extrude(profile=a, length=1);")
+    assert forward.Volume == pytest.approx(reverse.Volume)
+    assert _extents(forward) == pytest.approx(_extents(reverse))
+
+
+def test_finish_does_not_double_count_overlapping_solids():
+    """A boss standing on a base must fuse, not sum — otherwise every IoU metric inflates."""
+    shape = build(
+        "base = sketch(plane=XY, rect=[w=100, h=100]);\n"
+        "b = extrude(profile=base, length=10);\n"
+        "sk = sketch(plane=XY, circle=[center=b.axis, r=5]);\n"
+        "post = extrude(profile=sk, length=20);"
+    )
+    overlap = math.pi * 5**2 * 10  # the boss's lower 10 mm sits inside the base
+    assert shape.Volume == pytest.approx(100000 + math.pi * 5**2 * 20 - overlap)
+    assert shape.Volume != pytest.approx(100000 + math.pi * 5**2 * 20)
+
+
+def test_finish_keeps_solids_that_do_not_overlap():
+    """Fusing must not drop a body just because it is disjoint from the others."""
+    shape = build(
+        "a = sketch(plane=XY, rect=[w=2, h=2]);\none = extrude(profile=a, length=2);\n"
+        "b = sketch(plane=XZ, rect=[w=2, h=2]);\ntwo = extrude(profile=b, length=2);"
+    )
+    # (0,0,0)-(2,2,2) and (0,-2,0)-(2,0,2): face-to-face, no shared volume.
+    assert shape.Volume == pytest.approx(16.0)
+    assert _extents(shape) == pytest.approx((0.0, -2.0, 0.0, 2.0, 2.0, 2.0))
 
 
 def test_unnamed_extrude_statement_still_produces_a_real_solid():
@@ -249,17 +269,23 @@ def test_center_on_a_feature_axis_anchors_the_profile_there():
     compiled `center=b.axis` and `center=origin` to identical geometry.
     """
     base = "base = sketch(plane=XY, rect=[w=100, h=100]);\nb = extrude(profile=base, length=10);\n"
-    on_axis = build(
-        base + "sk = sketch(plane=XY, circle=[center=b.axis, r=5]);\np = extrude(profile=sk, length=20);"
-    )
-    at_origin = build(
-        base + "sk = sketch(plane=XY, circle=[center=origin, r=5]);\np = extrude(profile=sk, length=20);"
-    )
+
+    def boss(center: str):
+        """The boss on its own — finish() returns the fused model, so inspect the feature."""
+        backend = FreeCADBackend()
+        compile_program(
+            parse(
+                base
+                + f"sk = sketch(plane=XY, circle=[center={center}, r=5]);\np = extrude(profile=sk, length=20);"
+            ),
+            backend,
+        )
+        return _extents(backend.objects["p"].Shape)
 
     # b spans (0,0)-(100,100), so its axis is at x=50, y=50.
-    assert _extents(on_axis) == pytest.approx((45.0, 45.0, 0.0, 55.0, 55.0, 20.0))
-    assert _extents(at_origin) == pytest.approx((-5.0, -5.0, 0.0, 5.0, 5.0, 20.0))
-    assert _extents(on_axis) != _extents(at_origin)
+    assert boss("b.axis") == pytest.approx((45.0, 45.0, 0.0, 55.0, 55.0, 20.0))
+    assert boss("origin") == pytest.approx((-5.0, -5.0, 0.0, 5.0, 5.0, 20.0))
+    assert boss("b.axis") != boss("origin")
 
 
 def test_dir_parallel_to_the_plane_normal_is_accepted():
@@ -291,3 +317,59 @@ def test_unresolvable_anchor_raises_instead_of_defaulting_to_origin():
             base
             + "sk = sketch(plane=XY, circle=[center=b.face_top, r=5]);\np = extrude(profile=sk, length=20);"
         )
+
+
+# --- backend reuse across programs (issue #7) -----------------------------------
+
+
+def test_reused_backend_does_not_return_the_previous_programs_solid():
+    """`compile_program` rebuilds the registry each call, so the backend must too.
+
+    Regression for the defect where `self.objects` outlived the call and re-binding
+    a name kept its original insertion slot, so a second program returned the first
+    program's solid.
+    """
+    backend = FreeCADBackend()
+    first = compile_program(
+        parse(
+            "a = sketch(plane=XY, rect=[w=1, h=1]);\nb1 = extrude(profile=a, length=1);\n"
+            "c = sketch(plane=XY, rect=[w=2, h=2]);\nb2 = extrude(profile=c, length=2);"
+        ),
+        backend,
+    )
+    assert first.Volume == pytest.approx(8.0)  # the unit cube is inside the 2-cube
+
+    second = compile_program(
+        parse("a = sketch(plane=XY, rect=[w=10, h=10]);\nb1 = extrude(profile=a, length=10);"),
+        backend,
+    )
+    assert second.Volume == pytest.approx(1000.0)
+
+
+def test_reused_backend_does_not_orphan_superseded_document_objects():
+    """The defect left names like ['b1', 'b2', 'b001'] behind in the document."""
+    backend = FreeCADBackend()
+    compile_program(
+        parse(
+            "a = sketch(plane=XY, rect=[w=1, h=1]);\nb1 = extrude(profile=a, length=1);\n"
+            "c = sketch(plane=XY, rect=[w=2, h=2]);\nb2 = extrude(profile=c, length=2);"
+        ),
+        backend,
+    )
+    compile_program(
+        parse("a = sketch(plane=XY, rect=[w=10, h=10]);\nb1 = extrude(profile=a, length=10);"),
+        backend,
+    )
+    assert [obj.Name for obj in backend.doc.Objects] == ["b1"]
+    assert set(backend.objects) == {"a", "b1"}
+
+
+def test_reset_clears_state_without_closing_the_document():
+    backend = FreeCADBackend()
+    compile_program(
+        parse("a = sketch(plane=XY, rect=[w=1, h=1]);\nb = extrude(profile=a, length=1);"), backend
+    )
+    backend.reset()
+    assert backend.objects == {}
+    assert backend.axes == {}
+    assert backend.doc.Objects == []
