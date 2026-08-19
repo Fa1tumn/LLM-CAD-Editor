@@ -28,9 +28,10 @@ An engineer states an edit in plain language ("extend the shaft to 250, move the
 ```
 LLM-CAD-Editor/
 ├── README.md              # this file
-├── CHANGELOG.md           # dated log of what was delivered each session, Chinese
-├── CHANGELOG_en.md        # same log, reframed as an English progress report
-├── requirements.txt       # Python dependencies
+├── CLAUDE.md              # working notes for Claude Code (env, invariants, style)
+├── changelog/             # one folder per session, named <month>_<day> (e.g. 8_19)
+│   └── 8_19/              #   CHANGELOG_8_19.md (zh) + _en, presentation_*.md (zh/en/ko)
+├── requirements.txt       # Python dependencies (FreeCAD is NOT pip-installable — see below)
 ├── pytest.ini             # test config (adds repo root to pythonpath)
 ├── tests/                 # unit tests (pytest)
 ├── docs/
@@ -113,8 +114,28 @@ See `docs/weekly_plan.md` for the week-by-week breakdown of each milestone below
 
 ## Setup
 
+FreeCAD is a required dependency and is **not** pip-installable, so the venv must be created from
+FreeCAD's own bundled Python — a venv built from system Python cannot import `FreeCAD` / `Part`.
+
 ```bash
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python scripts/run_edit.py --help
+# macOS (brew install --cask freecad); on Linux use the prefix containing FreeCAD.so
+FC=/Applications/FreeCAD.app/Contents/Resources
+
+"$FC/bin/python" -m venv .venv                      # FreeCAD ships conda-forge Python 3.11
+echo "$FC/lib" > .venv/lib/python3.11/site-packages/freecad.pth
+.venv/bin/pip install -r requirements.txt
 ```
+
+Verify all three before starting work:
+
+```bash
+.venv/bin/python -c "import FreeCAD, Part; print(Part.makeBox(10,20,30).Volume)"   # 6000.0
+.venv/bin/python -c "from dsl.compiler import FreeCADBackend; FreeCADBackend()"    # no error
+.venv/bin/python -m pytest -q
+```
+
+`SymbolicBackend` is a fallback for machines without the kernel, not the target backend. The heavy ML
+stack (torch, transformers, peft, bitsandbytes) targets the 24GB-GPU training host and is not needed
+for DSL or verification work.
+
+The `/setup-env` skill runs and checks all of the above.
