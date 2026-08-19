@@ -69,6 +69,8 @@ class FreeCADBackend:
 
     def __init__(self) -> None:
         try:
+            # Order is load-bearing: Part.so links against the App layer FreeCAD sets
+            # up, and importing Part first segfaults rather than raising.
             import FreeCAD  # type: ignore
             import Part  # type: ignore
         except ImportError as exc:

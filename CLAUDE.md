@@ -51,6 +51,11 @@ are not runnable entry points yet.
 
 ## Invariants that break silently
 
+- **`import FreeCAD` must come before `import Part`.** `Part.so` links against the App layer
+  FreeCAD sets up; importing `Part` first **segfaults** instead of raising, so pytest dies during
+  collection with no summary and unrelated tests in the run never execute. The root `conftest.py`
+  initialises FreeCAD so test modules can write the natural `import Part`;
+  `tests/test_import_order.py` guards every other entry point.
 - **`dsl/grammar.md` is frozen spec.** `tests/test_dsl_parser.py` is written directly against its
   worked examples (§3, §6, §7). Grammar changes need a §9-style addendum, never a silent edit.
 - **`dsl/registry.py` closed sets must stay in sync with `grammar.md` §5**: `ROLES` (7 derived roles),
