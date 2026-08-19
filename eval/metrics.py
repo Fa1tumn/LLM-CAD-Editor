@@ -9,6 +9,7 @@ Metric computation.
 Corresponds to proposal §4.2 quantitative targets G1–G6.
 All metrics are measured only on held-out real parts.
 """
+
 from __future__ import annotations
 
 

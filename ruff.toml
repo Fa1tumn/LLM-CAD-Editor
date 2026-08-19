@@ -1,0 +1,20 @@
+# Matches the existing hand-written style (see CLAUDE.md "Code style").
+line-length = 110
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",    # line length is enforced by the formatter, not the linter
+    "B008",    # dataclass field defaults via factory calls are fine here
+    "SIM108",  # explicit if/else is often clearer in the parser
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["E402"]
+# CLI stubs parse args then `raise SystemExit`; `args` is the placeholder for
+# the pipeline wiring these TODOs describe — do not delete it to silence F841.
+"scripts/*" = ["F841"]
+
+[format]
+quote-style = "double"
