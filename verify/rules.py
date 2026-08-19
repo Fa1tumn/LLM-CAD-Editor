@@ -10,7 +10,9 @@ Design requirement: the two failure classes from prior work (boundary-crossing
 half-circle holes, pipe-joint gaps) must all be caught by this stage.
 Thresholds are in config/default.yaml.
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 

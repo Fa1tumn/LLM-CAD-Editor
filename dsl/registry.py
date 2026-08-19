@@ -1,8 +1,10 @@
 """Stable symbolic-reference registry used by compilation and evaluation."""
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from copy import deepcopy
-from typing import Any, Iterable
+from typing import Any
 
 from .ast import OpCall, Ref, Statement
 
@@ -11,13 +13,33 @@ OP_ROLES: dict[str, set[str]] = {
     "sketch": set(),
     "extrude": {"face_top", "face_bottom", "wall", "axis", "edge_top", "edge_bottom"},
     "revolve": {"face_top", "face_bottom", "wall", "axis", "edge_top", "edge_bottom"},
-    "pocket": {"wall", "floor"}, "groove": {"wall", "floor"},
-    "fillet": set(), "chamfer": set(),
+    "pocket": {"wall", "floor"},
+    "groove": {"wall", "floor"},
+    "fillet": set(),
+    "chamfer": set(),
 }
 LITERAL_ROOTS = {
-    "XY", "XZ", "YZ", "origin", "linear", "circular", "dim", "geom",
-    "equal", "range", "ratio", "concentric", "coplanar", "parallel",
-    "length", "radius", "depth", "dist", "angle", "count", "spacing",
+    "XY",
+    "XZ",
+    "YZ",
+    "origin",
+    "linear",
+    "circular",
+    "dim",
+    "geom",
+    "equal",
+    "range",
+    "ratio",
+    "concentric",
+    "coplanar",
+    "parallel",
+    "length",
+    "radius",
+    "depth",
+    "dist",
+    "angle",
+    "count",
+    "spacing",
 }
 
 
@@ -49,7 +71,7 @@ class ReferenceRegistry:
         self._features: dict[str, set[str]] = {}
         self._deps: dict[str, set[str]] = {}  # owner -> referenced feature roots
 
-    def clone(self) -> "ReferenceRegistry":
+    def clone(self) -> ReferenceRegistry:
         return deepcopy(self)
 
     def add_feature(self, name: str, roles: set[str], dependencies: Iterable[str] = ()) -> None:
