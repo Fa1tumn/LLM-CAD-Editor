@@ -210,12 +210,73 @@ def test_circle_wins_over_rect_when_a_sketch_carries_both():
     assert shape.BoundBox.XLength == pytest.approx(2.0)
 
 
-def test_zero_radius_cylinder_is_a_degenerate_but_returned_solid():
-    """makeCylinder(0, L) does not raise (unlike makeBox with a zero side)."""
-    shape = build("sk = sketch(plane=XY, circle=[center=origin, r=0]);\nb = extrude(profile=sk, length=3);")
-    assert shape.ShapeType == "Solid"
-    assert shape.Volume == pytest.approx(0.0)
-    assert not shape.isValid()  # OCCT itself flags the degenerate result
+def test_degenerate_dimensions_are_rejected_symmetrically():
+    """A zero radius is refused just like a zero box side.
+
+    `Part.makeBox` refuses non-positive sides but `Part.makeCylinder` accepts them
+    and returns an invalid solid, so the two profile branches used to validate
+    differently. The backend now checks both before calling the kernel.
+    """
+    from dsl.compiler import CompileError
+
+    with pytest.raises(CompileError, match="circle r must be positive"):
+        build("sk = sketch(plane=XY, circle=[center=origin, r=0]);\nb = extrude(profile=sk, length=3);")
+    with pytest.raises(CompileError, match="rect w must be positive"):
+        build("sk = sketch(plane=XY, rect=[w=0, h=3]);\nb = extrude(profile=sk, length=3);")
+
+
+def test_negative_extrude_length_is_rejected_for_both_profile_shapes():
+    """A negative length used to build an inside-out cylinder whose .Volume raised.
+
+    The raw `Base.FreeCADError` surfaced later, from a shape handed back by a
+    *successful* compile, so it was neither CompileError nor countable by the
+    per-layer metrics. The rect branch already raised; both now do.
+    """
+    from dsl.compiler import CompileError
+
+    for profile in ("circle=[center=origin, r=2]", "rect=[w=2, h=3]"):
+        with pytest.raises(CompileError, match="extrude length must be positive"):
+            build(f"sk = sketch(plane=XY, {profile});\nb = extrude(profile=sk, length=-4);")
+
+
+def test_a_solid_the_kernel_flags_as_invalid_never_escapes():
+    """Dimensions above zero but below OCCT's tolerance still yield an invalid solid.
+
+    `_positive` cannot catch this — it is a kernel tolerance, not a semantic rule —
+    so finish() checks isValid() as the backstop.
+    """
+    from dsl.compiler import CompileError
+
+    with pytest.raises(CompileError, match="program produced an invalid solid"):
+        build(
+            "sk = sketch(plane=XY, circle=[center=origin, r=0.0000000001]);\nb = extrude(profile=sk, length=1);"
+        )
+
+
+def test_a_user_feature_named_like_an_auto_name_is_not_clobbered():
+    """`__op_1` is a legal identifier (grammar.md §2) and used to collide with auto-minted names.
+
+    The unnamed statement was auto-named `__op_1`, overwrote the user's sketch in
+    `self.objects`, and the later extrude silently used the wrong profile — the
+    registry never saw the auto-name, so its uniqueness guard could not help.
+    """
+    shape = build(
+        "__op_1 = sketch(plane=XY, circle=[center=origin, r=1]);\n"
+        "sketch(plane=XY, rect=[w=100, h=100]);\n"
+        "b = extrude(profile=__op_1, length=1);"
+    )
+    # The program describes a cylinder r=1 length=1; the defect returned the 100x100 box.
+    assert shape.Volume == pytest.approx(math.pi * 1**2 * 1)
+
+
+def test_an_unnamed_statements_solid_survives_a_later_user_feature_of_that_name():
+    shape = build(
+        "a = sketch(plane=XY, rect=[w=2, h=2]);\n"
+        "extrude(profile=a, length=2);\n"
+        "__op_1 = sketch(plane=XY, rect=[w=9, h=9]);"
+    )
+    # The anonymous extrude is no longer overwritten, so the program still has a solid.
+    assert shape.Volume == pytest.approx(8.0)
 
 
 # --- sketch placement: plane, dir and center (issues #3 / #4) -------------------

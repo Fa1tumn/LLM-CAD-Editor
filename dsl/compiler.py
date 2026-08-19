@@ -117,6 +117,19 @@ class FreeCADBackend:
             return float(value)
         raise CompileError(f"expected numeric quantity, got {value!r}")
 
+    def _positive(self, value: Any, what: str) -> float:
+        """A dimension the kernel can actually build.
+
+        `Part.makeBox` rejects non-positive sides, but `Part.makeCylinder` accepts
+        them and returns a degenerate or inside-out solid whose `.Volume` then raises
+        a raw kernel error outside the compiler's error channel. Check both here so
+        the two profile branches fail the same way.
+        """
+        number = self._number(value)
+        if number <= 0:
+            raise CompileError(f"{what} must be positive, got {number:g}")
+        return number
+
     def _plane_frame(self, plane: Any) -> Any:
         """Rotation taking the sketch's local frame to world (grammar.md §4.1 `plane`)."""
         name = plane.path[0] if isinstance(plane, Ref) and plane.path else "XY"
@@ -180,7 +193,7 @@ class FreeCADBackend:
         if op == "extrude":
             profile = args.get("profile")
             sketch = self.objects.get(str(profile)) if isinstance(profile, Ref) else None
-            length = self._number(args.get("length"))
+            length = self._positive(args.get("length"), "extrude length")
             if not isinstance(sketch, dict):
                 raise CompileError(f"extrude profile is not a compiled sketch: {profile}")
 
@@ -191,13 +204,19 @@ class FreeCADBackend:
             if "circle" in sketch:
                 circle = sketch["circle"]
                 anchor = self._resolve_anchor(circle.get("center"), normal)
-                shape = self.Part.makeCylinder(self._number(circle.get("r")), length, anchor, direction)
+                shape = self.Part.makeCylinder(
+                    self._positive(circle.get("r"), "circle r"), length, anchor, direction
+                )
             elif "rect" in sketch:
                 rect = sketch["rect"]
                 anchor = self._resolve_anchor(rect.get("center"), normal)
                 # A rect is anchored by its corner, so orientation comes from the sketch
                 # frame rather than from `direction` alone.
-                shape = self.Part.makeBox(self._number(rect.get("w")), self._number(rect.get("h")), length)
+                shape = self.Part.makeBox(
+                    self._positive(rect.get("w"), "rect w"),
+                    self._positive(rect.get("h"), "rect h"),
+                    length,
+                )
                 placement = self.FreeCAD.Placement(anchor, rotation)
                 if direction.dot(normal) < 0:
                     placement = self.FreeCAD.Placement(
@@ -234,7 +253,21 @@ class FreeCADBackend:
         model = solids[0]
         for solid in solids[1:]:
             model = model.fuse(solid)
+        if not model.isValid():
+            raise CompileError("program produced an invalid solid")
         return model
+
+
+def _anonymous_name(index: int) -> str:
+    """Key for an unnamed statement that no DSL identifier can collide with.
+
+    `grammar.md` §2 defines `identifier ::= [a-zA-Z_][a-zA-Z0-9_]*`, so a name
+    containing spaces or angle brackets is unreachable from source. The previous
+    `__op_{index}` form was a legal identifier, and since the registry never sees
+    auto-minted names its uniqueness guard could not protect the backend from a
+    user feature of the same name.
+    """
+    return f"<anonymous {index}>"
 
 
 def _whole_feature(value: Any, op: str) -> str:
@@ -266,7 +299,7 @@ def compile_program(prog: Program, backend: Backend | None = None) -> Any:
                     raise CompileError("replace `with` must be an operation call")
                 active_backend.replace(target, replacement.op, replacement.args)
             else:
-                name = statement.name or f"__op_{index}"
+                name = statement.name if statement.name is not None else _anonymous_name(index)
                 active_backend.feature(name, statement.op, statement.args)
         return active_backend.finish()
     except (CompileError, ReferenceError):

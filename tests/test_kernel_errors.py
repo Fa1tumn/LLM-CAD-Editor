@@ -59,7 +59,6 @@ BOTH_ACCEPT = {
     "circle_extrude": CIRCLE,
     "rect_extrude": RECT,
     "unnamed_extrude": UNNAMED,
-    "zero_radius_cylinder": DEGENERATE_CIRCLE,
 }
 
 # Programs rejected ABOVE the backend (compile_program dispatch guards + ReferenceRegistry),
@@ -232,19 +231,26 @@ KERNEL_ONLY_REJECTS = {
         "program produced no solid",
     ),
     "empty_program": ("", "program produced no solid"),
-    "auto_name_shadowed_by_sketch": (
-        "a = sketch(plane=XY, rect=[w=2, h=2]);\n"
-        "extrude(profile=a, length=2);\n"
-        "__op_1 = sketch(plane=XY, rect=[w=9, h=9]);",
-        "program produced no solid",
-    ),
     "negative_extrude_length": (
         "sk = sketch(plane=XY, rect=[w=2, h=3]);\nbody = extrude(profile=sk, length=-4);",
-        "backend execution failed: height of box too small",
+        "extrude length must be positive, got -4",
     ),
     "zero_rect_width": (
         "sk = sketch(plane=XY, rect=[w=0, h=3]);\nb = extrude(profile=sk, length=3);",
+        "rect w must be positive, got 0",
+    ),
+    "zero_radius_cylinder": (
+        DEGENERATE_CIRCLE,
+        "circle r must be positive, got 0",
+    ),
+    "subtolerance_box": (
+        "sk = sketch(plane=XY, rect=[w=0.0000000001, h=0.0000000001]);\n"
+        "b = extrude(profile=sk, length=0.0000000001);",
         "backend execution failed: length of box too small",
+    ),
+    "subtolerance_cylinder": (
+        "sk = sketch(plane=XY, circle=[center=origin, r=0.0000000001]);\nb = extrude(profile=sk, length=1);",
+        "program produced an invalid solid",
     ),
     "circle_given_as_bare_list": (
         "sk = sketch(plane=XY, circle=[20]);\nb = extrude(profile=sk, length=3);",
@@ -370,7 +376,7 @@ def test_bad_extrude_profile_rejected(kernel, case):
 # --------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("case", ["sketch_only", "empty_program", "auto_name_shadowed_by_sketch"])
+@pytest.mark.parametrize("case", ["sketch_only", "empty_program"])
 def test_program_produced_no_solid(kernel, case):
     source, message = KERNEL_ONLY_REJECTS[case]
     _expect_compile_error(kernel, source, message)
@@ -381,7 +387,7 @@ def test_program_produced_no_solid(kernel, case):
 # --------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("case", ["negative_extrude_length", "zero_rect_width"])
+@pytest.mark.parametrize("case", ["subtolerance_box"])
 def test_occt_error_wrapped_as_compile_error(kernel, case):
     source, message = KERNEL_ONLY_REJECTS[case]
     _expect_compile_error(kernel, source, message)
@@ -394,20 +400,17 @@ def test_python_error_wrapped_as_compile_error(kernel):
     assert isinstance(error.__cause__, AttributeError)
 
 
-def test_zero_dimensions_are_asymmetric(kernel):
-    """makeCylinder(0, l) succeeds with Volume 0.0 while makeBox(0, ...) raises -- pin the asymmetry.
+def test_degenerate_dimensions_are_rejected_symmetrically(kernel):
+    """Both profile branches now refuse a degenerate dimension before reaching the kernel.
 
-    The degenerate cylinder is not merely empty, it is an INVALID shape that the backend hands back
-    without complaint: validation of degenerate geometry is nobody's job in the current pipeline.
+    `Part.makeCylinder(0, l)` succeeds and returns an INVALID solid while `Part.makeBox(0, ...)`
+    raises, so validation used to depend on which profile shape the program happened to use.
     """
-    shape = compile_program(parse(DEGENERATE_CIRCLE), kernel())
-    assert shape.Volume == pytest.approx(0.0)
-    assert not shape.isValid()
-
+    _expect_compile_error(kernel, DEGENERATE_CIRCLE, "circle r must be positive, got 0")
     _expect_compile_error(
         kernel,
         "sk = sketch(plane=XY, rect=[w=0, h=3]);\nb = extrude(profile=sk, length=3);",
-        "backend execution failed: length of box too small",
+        "rect w must be positive, got 0",
     )
 
 
@@ -478,8 +481,7 @@ def test_both_backends_accept_the_same_programs(kernel, case):
     model = compile_program(parse(program_source), SymbolicBackend())
     assert shape.ShapeType == "Solid"
     assert isinstance(model, SymbolicModel)
-    # Acceptance does not imply a well-formed solid; see test_zero_dimensions_are_asymmetric.
-    assert shape.isValid() or case == "zero_radius_cylinder"
+    assert shape.isValid()
 
 
 @pytest.mark.parametrize("case", sorted(BACKEND_INDEPENDENT_REJECTS))
