@@ -1,0 +1,198 @@
+"""Real-kernel geometry regressions for FreeCADBackend (grammar.md §4.1, §7).
+
+Every test here drives an actual OCCT solid through `Part.makeCylinder` /
+`Part.makeBox` and asserts concrete geometry — volume, bounding-box extents,
+topology counts — rather than merely "it did not raise".
+"""
+
+from __future__ import annotations
+
+import math
+
+import pytest
+
+from dsl.compiler import FreeCADBackend, compile_program
+from dsl.parser import parse
+
+pytest.importorskip("FreeCAD")
+
+import FreeCAD  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def close_freecad_documents():
+    """Close every document a test opens, so each backend gets a fresh one.
+
+    `FreeCAD.newDocument("LLMCAD")` does not collide — FreeCAD uniquifies the
+    name (LLMCAD, LLMCAD1, ...) — but the documents leak for the whole session,
+    so tear them down to keep tests hermetic.
+    """
+    before = set(FreeCAD.listDocuments())
+    yield
+    for name in set(FreeCAD.listDocuments()) - before:
+        FreeCAD.closeDocument(name)
+
+
+def build(source: str):
+    """Compile `source` on a dedicated FreeCADBackend and return the OCCT shape."""
+    return compile_program(parse(source), FreeCADBackend())
+
+
+# --- circle -> Part.makeCylinder ------------------------------------------------
+
+
+def test_circle_sketch_extrudes_to_cylinder_solid():
+    shape = build(
+        "sk = sketch(plane=XY, circle=[center=origin, r=20]);\nbody = extrude(profile=sk, length=200);"
+    )
+    assert shape.ShapeType == "Solid"
+    assert shape.isValid()
+    assert len(shape.Solids) == 1
+    # A capped cylinder: lateral face + two planar caps.
+    assert len(shape.Faces) == 3
+    assert shape.Volume == pytest.approx(math.pi * 20**2 * 200)
+    assert shape.Area == pytest.approx(2 * math.pi * 20 * 200 + 2 * math.pi * 20**2)
+
+
+def test_cylinder_bound_box_is_axis_aligned_on_z_from_origin():
+    shape = build(
+        "sk = sketch(plane=XY, circle=[center=origin, r=20]);\nbody = extrude(profile=sk, length=200);"
+    )
+    box = shape.BoundBox
+    # r drives X and Y (diameter), length drives Z, and the base sits on z = 0.
+    assert (box.XLength, box.YLength, box.ZLength) == pytest.approx((40.0, 40.0, 200.0))
+    assert (box.XMin, box.XMax) == pytest.approx((-20.0, 20.0))
+    assert (box.YMin, box.YMax) == pytest.approx((-20.0, 20.0))
+    assert (box.ZMin, box.ZMax) == pytest.approx((0.0, 200.0))
+    assert shape.CenterOfMass.z == pytest.approx(100.0)
+
+
+def test_cylinder_radius_and_length_flow_through_independently():
+    shape = build("sk = sketch(plane=XY, circle=[center=origin, r=3]);\nb = extrude(profile=sk, length=7);")
+    assert shape.Volume == pytest.approx(math.pi * 3**2 * 7)
+    assert (shape.BoundBox.XLength, shape.BoundBox.ZLength) == pytest.approx((6.0, 7.0))
+
+
+# --- rect -> Part.makeBox -------------------------------------------------------
+
+
+def test_rect_sketch_extrudes_to_box_solid():
+    shape = build("sk = sketch(plane=XY, rect=[w=10, h=20]);\nbody = extrude(profile=sk, length=30);")
+    assert shape.ShapeType == "Solid"
+    assert shape.isValid()
+    assert len(shape.Solids) == 1
+    assert (len(shape.Faces), len(shape.Edges), len(shape.Vertexes)) == (6, 12, 8)
+    assert shape.Volume == pytest.approx(6000.0)
+    assert shape.Area == pytest.approx(2 * (10 * 20 + 10 * 30 + 20 * 30))
+
+
+def test_rect_w_h_length_map_to_x_y_z_with_three_distinct_values():
+    shape = build("sk = sketch(plane=XY, rect=[w=3, h=5]);\nb = extrude(profile=sk, length=7);")
+    box = shape.BoundBox
+    # Distinct values, so a swapped axis mapping cannot pass by coincidence.
+    assert (box.XLength, box.YLength, box.ZLength) == pytest.approx((3.0, 5.0, 7.0))
+    # makeBox anchors the corner at the global origin.
+    assert (box.XMin, box.YMin, box.ZMin) == pytest.approx((0.0, 0.0, 0.0))
+    assert shape.CenterOfMass == pytest.approx((1.5, 2.5, 3.5))
+    assert shape.Volume == pytest.approx(105.0)
+
+
+def test_rect_keyword_order_does_not_change_the_solid():
+    forward = build("sk = sketch(plane=XY, rect=[w=3, h=5]);\nb = extrude(profile=sk, length=7);")
+    reversed_ = build("sk = sketch(plane=XY, rect=[h=5, w=3]);\nb = extrude(profile=sk, length=7);")
+    assert reversed_.Volume == pytest.approx(forward.Volume)
+    assert (
+        reversed_.BoundBox.XLength,
+        reversed_.BoundBox.YLength,
+        reversed_.BoundBox.ZLength,
+    ) == pytest.approx((3.0, 5.0, 7.0))
+
+
+def test_float_literals_reach_the_kernel_unrounded():
+    shape = build("sk = sketch(plane=XY, rect=[w=1.5, h=2.5]);\nb = extrude(profile=sk, length=4.0);")
+    assert shape.Volume == pytest.approx(15.0)
+    assert (
+        shape.BoundBox.XLength,
+        shape.BoundBox.YLength,
+        shape.BoundBox.ZLength,
+    ) == pytest.approx((1.5, 2.5, 4.0))
+
+
+def test_unit_suffix_is_dropped_and_the_magnitude_is_used_verbatim():
+    """`_number` returns Quantity.value and discards `.unit` (compiler.py:84-89)."""
+    with_units = build(
+        "sk = sketch(plane=XY, circle=[center=origin, r=2 mm]);\nb = extrude(profile=sk, length=10 mm);"
+    )
+    bare = build("sk = sketch(plane=XY, circle=[center=origin, r=2]);\nb = extrude(profile=sk, length=10);")
+    assert with_units.Volume == pytest.approx(math.pi * 2**2 * 10)
+    assert with_units.Volume == pytest.approx(bare.Volume)
+
+
+# --- multi-statement programs ---------------------------------------------------
+
+
+def test_multi_statement_program_builds_every_solid_and_finish_returns_the_last_named():
+    source = (
+        "a = sketch(plane=XY, rect=[w=1, h=1]);\n"
+        "b = sketch(plane=XY, circle=[center=origin, r=10]);\n"
+        "big = extrude(profile=b, length=100);\n"
+        "small = extrude(profile=a, length=1);"
+    )
+    backend = FreeCADBackend()
+    shape = compile_program(parse(source), backend)
+
+    # Both extrudes really executed and landed in the document as separate features.
+    assert [obj.Name for obj in backend.doc.Objects] == ["big", "small"]
+    assert backend.objects["big"].Shape.Volume == pytest.approx(math.pi * 10**2 * 100)
+    assert backend.objects["small"].Shape.Volume == pytest.approx(1.0)
+
+    # finish() returns solids[-1] by dict-insertion order — the unit cube, not the fusion.
+    assert shape.Volume == pytest.approx(1.0)
+    assert len(shape.Faces) == 6
+    assert (
+        shape.BoundBox.XLength,
+        shape.BoundBox.YLength,
+        shape.BoundBox.ZLength,
+    ) == pytest.approx((1.0, 1.0, 1.0))
+
+
+def test_finish_selection_follows_declaration_order_not_size():
+    """Same two solids, reversed declaration order -> the other one comes back."""
+    shape = build(
+        "a = sketch(plane=XY, rect=[w=1, h=1]);\n"
+        "b = sketch(plane=XY, circle=[center=origin, r=10]);\n"
+        "small = extrude(profile=a, length=1);\n"
+        "big = extrude(profile=b, length=100);"
+    )
+    assert shape.Volume == pytest.approx(math.pi * 10**2 * 100)
+    assert len(shape.Faces) == 3
+
+
+def test_unnamed_extrude_statement_still_produces_a_real_solid():
+    shape = build("sk = sketch(plane=XY, rect=[w=2, h=3]);\nextrude(profile=sk, length=4);")
+    assert shape.ShapeType == "Solid"
+    assert shape.Volume == pytest.approx(24.0)
+    assert (
+        shape.BoundBox.XLength,
+        shape.BoundBox.YLength,
+        shape.BoundBox.ZLength,
+    ) == pytest.approx((2.0, 3.0, 4.0))
+
+
+def test_circle_wins_over_rect_when_a_sketch_carries_both():
+    """compiler.py:101 tests `"circle" in sketch` first, whatever the source order."""
+    shape = build(
+        "sk = sketch(plane=XY, rect=[w=100, h=100], circle=[center=origin, r=1]);\n"
+        "b = extrude(profile=sk, length=1);"
+    )
+    assert shape.Volume == pytest.approx(math.pi)
+    assert len(shape.Faces) == 3  # a cylinder, not a 6-faced box
+    assert shape.BoundBox.XLength == pytest.approx(2.0)
+
+
+def test_zero_radius_cylinder_is_a_degenerate_but_returned_solid():
+    """makeCylinder(0, L) does not raise (unlike makeBox with a zero side)."""
+    shape = build("sk = sketch(plane=XY, circle=[center=origin, r=0]);\nb = extrude(profile=sk, length=3);")
+    assert shape.ShapeType == "Solid"
+    assert shape.Volume == pytest.approx(0.0)
+    assert not shape.isValid()  # OCCT itself flags the degenerate result
