@@ -6,14 +6,16 @@ instruction was satisfied and whether the edit over-reached.
 This turns prior work's "VLM for evaluation" into a stage of the
 operating loop itself.
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass
 
 
 @dataclass
 class VisualResult:
     ok: bool
-    score: int          # 1~5
+    score: int  # 1~5
     reason: str = ""
 
 

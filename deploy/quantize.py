@@ -6,6 +6,7 @@ deployment with a 7~14B model + int4 quantization, aiming for
 latency/edit ≤30 seconds. Quantized performance loss on G1–G3 must be
 re-benchmarked after quantization.
 """
+
 from __future__ import annotations
 
 
