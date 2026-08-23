@@ -46,7 +46,7 @@ def test_the_repository_has_python_files_to_check():
 
 @pytest.mark.parametrize("path", _python_files(), ids=lambda p: str(p.relative_to(REPO)))
 def test_part_is_never_imported_before_freecad(path: Path):
-    tree = ast.parse(path.read_text(), filename=str(path))
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     part = _first_import_line(tree, "Part")
     if part is None:
         return
@@ -65,7 +65,7 @@ def test_part_is_never_imported_before_freecad(path: Path):
 
 def test_the_compiler_still_orders_its_lazy_imports_correctly():
     """dsl/compiler.py is the one place that actually imports Part, so pin it explicitly."""
-    tree = ast.parse((REPO / "dsl" / "compiler.py").read_text())
+    tree = ast.parse((REPO / "dsl" / "compiler.py").read_text(encoding="utf-8"))
     freecad = _first_import_line(tree, "FreeCAD")
     part = _first_import_line(tree, "Part")
     assert freecad is not None and part is not None
