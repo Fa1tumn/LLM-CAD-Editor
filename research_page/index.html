@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference-Stable CAD DSL</title>
+<meta name="description" content="Research project page for a reference-stable DSL for LLM-driven CAD editing.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+
+<style>
+:root {
+  --paper:        #e9e6de;
+  --sheet:        #f5f3ee;
+  --sheet-sunk:   #e2ded4;
+  --graphite:     #191b1d;
+  --graphite-mid: #4d5257;
+  --graphite-soft:#6d7378;
+  --rule:         #cbc6b9;
+  --rule-faint:   #d8d3c7;
+  --ink-blue:     #17458f;
+  --ink-blue-bg:  #dfe4f0;
+  --copper:       #a85c2c;
+  --grid:         rgba(25, 27, 29, 0.045);
+  --shadow:       rgba(38, 34, 24, 0.10);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:        #141618;
+    --sheet:        #1c1f22;
+    --sheet-sunk:   #101214;
+    --graphite:     #e7e4dc;
+    --graphite-mid: #a8adb2;
+    --graphite-soft:#868c92;
+    --rule:         #333940;
+    --rule-faint:   #262c31;
+    --ink-blue:     #83abf0;
+    --ink-blue-bg:  #1b2739;
+    --copper:       #d8935c;
+    --grid:         rgba(231, 228, 220, 0.045);
+    --shadow:       rgba(0, 0, 0, 0.45);
+  }
+}
+:root[data-theme="dark"] {
+  --paper:        #141618;
+  --sheet:        #1c1f22;
+  --sheet-sunk:   #101214;
+  --graphite:     #e7e4dc;
+  --graphite-mid: #a8adb2;
+  --graphite-soft:#868c92;
+  --rule:         #333940;
+  --rule-faint:   #262c31;
+  --ink-blue:     #83abf0;
+  --ink-blue-bg:  #1b2739;
+  --copper:       #d8935c;
+  --grid:         rgba(231, 228, 220, 0.045);
+  --shadow:       rgba(0, 0, 0, 0.45);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 26px 26px;
+  color: var(--graphite);
+  font-family: "Source Serif 4", Charter, Georgia, serif;
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.sheet {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 clamp(20px, 5vw, 64px) 96px;
+}
+
+/* --- masthead ------------------------------------------------------------ */
+
+.masthead {
+  padding: clamp(56px, 9vw, 104px) 0 0;
+  border-bottom: 1px solid var(--rule);
+}
+.stamp {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--graphite-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  padding-bottom: 26px;
+}
+.stamp .live { color: var(--copper); }
+
+h1 {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(38px, 6.4vw, 74px);
+  line-height: 1.02;
+  letter-spacing: -0.028em;
+  text-wrap: balance;
+  margin: 0 0 26px;
+  max-width: 16ch;
+}
+h1 em {
+  font-style: normal;
+  color: var(--ink-blue);
+}
+.thesis {
+  font-size: clamp(18px, 2.1vw, 22px);
+  line-height: 1.5;
+  max-width: 60ch;
+  color: var(--graphite-mid);
+  margin: 0 0 40px;
+}
+.thesis strong { color: var(--graphite); font-weight: 600; }
+
+.hero-figure {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1fr);
+  gap: clamp(20px, 3.4vw, 40px);
+  align-items: center;
+  padding: 8px 0 44px;
+}
+.hero-figure img {
+  width: 100%;
+  max-width: 100%;
+  display: block;
+}
+.hero-src { min-width: 0; }
+/* The hero listing sits in a narrower column than the §02 ones, so it needs its
+   own size to keep the longest statement on one line. */
+.hero-src .listing pre { font-size: 12px; line-height: 1.66; }
+
+@media (max-width: 760px) {
+  .hero-figure { grid-template-columns: 1fr; }
+}
+
+/* --- sections ------------------------------------------------------------ */
+
+section {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: clamp(16px, 3vw, 40px);
+  padding: clamp(44px, 7vw, 76px) 0;
+  border-bottom: 1px solid var(--rule-faint);
+}
+@media (max-width: 720px) {
+  section { grid-template-columns: 1fr; gap: 14px; }
+}
+.rail {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--graphite-soft);
+  padding-top: 10px;
+  line-height: 1.5;
+}
+.body { min-width: 0; }
+
+h2 {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 600;
+  font-size: clamp(25px, 3.3vw, 35px);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  margin: 0 0 20px;
+  max-width: 22ch;
+}
+h3 {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: -0.005em;
+  margin: 34px 0 12px;
+}
+p { max-width: 66ch; margin: 0 0 17px; }
+p.lead { font-size: 19px; color: var(--graphite-mid); }
+a { color: var(--ink-blue); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--ink-blue);
+  outline-offset: 3px;
+}
+code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.87em;
+  background: var(--ink-blue-bg);
+  color: var(--ink-blue);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+/* --- code sheet ---------------------------------------------------------- */
+
+.listing {
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  margin: 24px 0;
+  box-shadow: 0 1px 0 var(--shadow);
+}
+.listing-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--rule);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--graphite-soft);
+}
+.listing pre {
+  margin: 0;
+  padding: 16px 15px;
+  overflow-x: auto;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 13.5px;
+  line-height: 1.72;
+  color: var(--graphite);
+  tab-size: 2;
+}
+.cm { color: var(--graphite-soft); font-style: italic; }
+.kw { color: var(--ink-blue); font-weight: 600; }
+.rf { color: var(--copper); font-weight: 500; }
+
+/* --- comparison figures -------------------------------------------------- */
+
+figure {
+  margin: 28px 0 8px;
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  box-shadow: 0 1px 0 var(--shadow);
+}
+.fig-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--rule);
+}
+.fig-title {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--graphite-soft);
+}
+.switch { display: flex; gap: 0; border: 1px solid var(--rule); }
+.switch button {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 6px 13px;
+  border: 0;
+  background: transparent;
+  color: var(--graphite-soft);
+  cursor: pointer;
+}
+.switch button + button { border-left: 1px solid var(--rule); }
+.switch button[aria-pressed="true"] {
+  background: var(--ink-blue);
+  color: var(--sheet);
+}
+.frames { position: relative; }
+.frames img {
+  width: 100%;
+  display: block;
+  background: transparent;
+}
+.frames img[hidden] { display: none; }
+.fig-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0;
+}
+.fig-body > .frames { border-right: 1px solid var(--rule-faint); }
+.fig-note {
+  padding: 18px 18px 20px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.fig-note p { max-width: none; margin: 0 0 12px; font-size: 15px; }
+.fig-note p:last-child { margin-bottom: 0; }
+@media (max-width: 720px) {
+  .fig-body { grid-template-columns: 1fr; }
+  .fig-body > .frames { border-right: 0; border-bottom: 1px solid var(--rule-faint); }
+}
+figcaption {
+  font-size: 14px;
+  color: var(--graphite-soft);
+  padding: 12px 2px 0;
+  max-width: 78ch;
+}
+
+/* --- data tables --------------------------------------------------------- */
+
+.table-wrap { overflow-x: auto; margin: 22px 0; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 15px;
+}
+th, td {
+  text-align: left;
+  padding: 9px 14px 9px 0;
+  border-bottom: 1px solid var(--rule-faint);
+  vertical-align: top;
+}
+th {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--graphite-soft);
+  border-bottom: 1px solid var(--rule);
+}
+td.num {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.state {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.state.done { color: var(--ink-blue); }
+.state.part { color: var(--copper); }
+.state.stub { color: var(--graphite-soft); }
+
+/* --- stage list ---------------------------------------------------------- */
+
+.stages { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 1px; background: var(--rule-faint); border: 1px solid var(--rule); }
+.stages li { background: var(--sheet); padding: 15px 17px; display: grid; grid-template-columns: 30px minmax(0,1fr); gap: 14px; }
+.stages .n {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--copper);
+  padding-top: 2px;
+}
+.stages h4 { font-family: Archivo, sans-serif; font-size: 15px; font-weight: 600; margin: 0 0 3px; }
+.stages p { margin: 0; font-size: 15px; color: var(--graphite-mid); max-width: 62ch; }
+
+/* --- callout ------------------------------------------------------------- */
+
+.callout {
+  border-left: 2px solid var(--copper);
+  padding: 4px 0 4px 18px;
+  margin: 26px 0;
+}
+.callout p { margin: 0; color: var(--graphite-mid); }
+
+/* --- footer -------------------------------------------------------------- */
+
+footer {
+  padding: 44px 0 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  color: var(--graphite-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .frames img { animation: fade 220ms ease-out; }
+  @keyframes fade { from { opacity: 0.25; } to { opacity: 1; } }
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+<header class="masthead">
+  <div class="stamp">
+    <span>DSL v1 &middot; frozen spec</span>
+    <span>Milestone M2</span>
+    <span class="live">2026.09 &ndash; 2027.08</span>
+    <span>offline / air-gapped</span>
+  </div>
+  <h1>Edits that keep their <em>references</em>.</h1>
+  <p class="thesis">
+    An engineer says &ldquo;widen the plate.&rdquo; A language model rewrites a small CAD DSL, a compiler
+    replays it on the OCCT kernel, and a four-stage loop checks the result. The hard part is not
+    generating geometry &mdash; it is making sure that after the edit, <strong>every reference still
+    points at the thing it named.</strong>
+  </p>
+  <div class="hero-figure">
+    <img src="figures/hero.png" alt="A square plate with a cylindrical boss standing at its centre, rendered from compiled DSL source.">
+    <div class="hero-src">
+      <div class="listing" style="margin-top:0">
+        <div class="listing-bar"><span>source.dsl</span><span>&rarr; OCCT solid</span></div>
+<pre><span class="rf">base</span>  = <span class="kw">sketch</span>(plane=XY, rect=[w=110, h=110]);
+<span class="rf">plate</span> = <span class="kw">extrude</span>(profile=base, length=10);
+<span class="rf">sk</span>    = <span class="kw">sketch</span>(plane=XY, circle=[center=<span class="rf">plate.axis</span>, r=20]);
+<span class="rf">boss</span>  = <span class="kw">extrude</span>(profile=sk, length=52);</pre>
+      </div>
+      <p style="font-size:15px;color:var(--graphite-soft);margin:0">
+        The boss is placed on <code>plate.axis</code> &mdash; a name, not a coordinate. Every render on this
+        page is the actual solid this compiler produced.
+      </p>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="rail">§ 01<br>Problem</div>
+  <div class="body">
+    <h2>Geometry forgets its own names</h2>
+    <p class="lead">
+      B-rep kernels do not promise that <code>Face 3</code> is still <code>Face 3</code> after you change a
+      parameter and regenerate. This is the Topological Naming Problem, and it is why parametric CAD
+      files break in ways that look arbitrary.
+    </p>
+    <p>
+      For a language model editing CAD, it is worse than an inconvenience. The model has to express
+      &ldquo;the hole on the top face&rdquo; in a form that survives its own next edit. If it emits an index,
+      the reference is dead the moment anything upstream moves. If it emits a coordinate, the reference was
+      never alive &mdash; it just happened to coincide.
+    </p>
+    <div class="callout">
+      <p>
+        So the language comes first. Before you can measure whether a model edits CAD correctly, you need a
+        representation in which &ldquo;correctly&rdquo; is even expressible.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="rail">§ 02<br>Language</div>
+  <div class="body">
+    <h2>A CAD model is an ordered list of named features</h2>
+    <p>
+      Each statement creates or modifies one feature. Features are named at the point they are created, and
+      every later statement refers to them by that name or by a derived role &mdash; <code>body.face_top</code>,
+      <code>hole1.axis</code>, <code>pat1[2]</code>. There are seven roles in v1, and which operation exposes
+      which is fixed by the spec.
+    </p>
+    <div class="listing">
+      <div class="listing-bar"><span>dsl/grammar.md &sect;2&ndash;&sect;3</span><span>excerpt</span></div>
+<pre>identifier   ::= [a-zA-Z_][a-zA-Z0-9_]*
+reference    ::= identifier ("." identifier)* ("[" (number | "*") "]")?
+
+statement    ::= feature_def | edit_op
+feature_def  ::= identifier "=" operation "(" args ")" ";"
+value        ::= number unit? | reference | string
+               | "[" value* "]"        <span class="cm"># spacing=[10, 20, 30]</span>
+               | "[" args "]"          <span class="cm"># circle=[center=origin, r=20]</span>
+               | operation "(" args ")"</pre>
+    </div>
+    <p>
+      The grammar is deliberately small and regular. That is not minimalism for its own sake: a 7&ndash;14B
+      model has to emit it correctly under quantization, and every keyword is a chance to get the syntax
+      wrong.
+    </p>
+
+    <h3>The sequential-edit benchmark, in the language itself</h3>
+    <div class="listing">
+      <div class="listing-bar"><span>dsl/grammar.md &sect;7</span><span>5-step chain</span></div>
+<pre><span class="rf">sk1</span>  = <span class="kw">sketch</span>(plane=XY, circle=[center=origin, r=20]);
+<span class="rf">body</span> = <span class="kw">extrude</span>(profile=sk1, length=200);
+
+<span class="cm"># 1 — lengthen: 200 → 250</span>
+<span class="kw">edit</span>(target=body, set=length, value=250);
+
+<span class="cm"># 2 — drill a hole on the top face</span>
+<span class="rf">h1</span>   = <span class="kw">pocket</span>(on=<span class="rf">body.face_top</span>, circle=[center=<span class="rf">body.axis</span>, r=6], depth=180);
+
+<span class="cm"># 3 — pattern it around the axis</span>
+<span class="rf">p1</span>   = <span class="kw">pattern</span>(feature=h1, type=circular, count=4, angle=90);
+
+<span class="cm"># 4 — cylinder → hex prism, which forces re-binding</span>
+<span class="kw">replace</span>(target=body, with=extrude(profile=hex(r=20), length=250));
+
+<span class="cm"># 5 — chamfer the top edge</span>
+<span class="kw">chamfer</span>(on=<span class="rf">body.edge_top</span>, dist=1.5);</pre>
+    </div>
+    <p>
+      Step 4 is the interesting one. Replacing a feature changes which roles exist, so every downstream
+      reference has to be re-bound or the program has to be rejected. The registry refuses a replacement
+      that would strip a role something later still depends on.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="rail">§ 03<br>Effect</div>
+  <div class="body">
+    <h2>One edit, and the geometry downstream follows</h2>
+    <p>
+      Here is the whole argument in one comparison. The only change between these two models is the plate's
+      width &mdash; <code>w=80</code> becomes <code>w=128</code>. Nothing about the boss is touched.
+    </p>
+    <figure>
+      <div class="fig-head">
+        <span class="fig-title">plate width &middot; boss anchored on plate.axis</span>
+        <div class="switch" role="group" aria-label="Plate width">
+          <button type="button" data-fig="stab" data-frame="0" aria-pressed="true">w = 80</button>
+          <button type="button" data-fig="stab" data-frame="1" aria-pressed="false">w = 128</button>
+        </div>
+      </div>
+      <div class="fig-body">
+        <div class="frames" data-fig="stab">
+          <img src="figures/stab-a.png" alt="An 80 mm square plate with the boss standing exactly at its centre.">
+          <img src="figures/stab-b.png" alt="A 128 mm square plate, with the boss again standing exactly at its centre." hidden>
+        </div>
+        <div class="fig-note">
+          <p><strong>Boss centre, measured from the compiled solid:</strong></p>
+          <p style="font-family:'IBM Plex Mono',monospace;font-size:13.5px;font-variant-numeric:tabular-nums">
+            w = 80 &nbsp;&rarr;&nbsp; (40, 40)<br>
+            w = 128 &rarr;&nbsp; (64, 64)
+          </p>
+          <p>
+            Written as a coordinate, the boss would still sit at (40, 40) and hang off the corner. Written as
+            <code>plate.axis</code>, it is re-resolved against the new solid every time the program is
+            compiled.
+          </p>
+        </div>
+      </div>
+      <figcaption>
+        Both renders are output of <code>dsl/compiler.py</code> at the same scale. The plate grows; the boss
+        stays on the axis without being edited.
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <div class="rail">§ 04<br>Kernel</div>
+  <div class="body">
+    <h2>A reference is only as stable as the solid under it</h2>
+    <p>
+      Symbolic names buy nothing if the compiler quietly builds different geometry than the program
+      describes. Until recently it did: <code>sketch(plane=...)</code> was parsed, stored, and never read, so
+      every solid was built on XY and extruded along +Z no matter what the source said.
+    </p>
+    <figure>
+      <div class="fig-head">
+        <span class="fig-title">three sketch planes &middot; XY / XZ / YZ</span>
+        <div class="switch" role="group" aria-label="Compiler behaviour">
+          <button type="button" data-fig="pl" data-frame="0" aria-pressed="true">before</button>
+          <button type="button" data-fig="pl" data-frame="1" aria-pressed="false">after</button>
+        </div>
+      </div>
+      <div class="fig-body">
+        <div class="frames" data-fig="pl">
+          <img src="figures/planes-before.png" alt="A single vertical bar: all three sketch planes produced identical, coincident solids.">
+          <img src="figures/planes.png" alt="Three orthogonal bars in blue, copper and green, one per sketch plane." hidden>
+        </div>
+        <div class="fig-note">
+          <p>
+            The same three-statement program, compiled before and after the fix. Before, all three bodies
+            coincide &mdash; you are looking at three solids stacked in exactly the same place.
+          </p>
+          <p style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-variant-numeric:tabular-nums">
+            XY &rarr; (0,0,0)&ndash;(14,14,70)<br>
+            XZ &rarr; (0,&minus;70,0)&ndash;(14,0,14)<br>
+            YZ &rarr; (0,0,0)&ndash;(70,14,14)
+          </p>
+          <p>
+            Nothing raised. A verification loop scoring that model would have marked geometry contradicting
+            its own source as correct.
+          </p>
+        </div>
+      </div>
+      <figcaption>
+        Seven defects of this kind were found by running the compiler against the real kernel for the first
+        time, and fixed together. The regression suite went from 20 tests to 136.
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <div class="rail">§ 05<br>Verification</div>
+  <div class="body">
+    <h2>Four checks, then a human for the rest</h2>
+    <p>
+      An edit that compiles is not an edit that is right. Each result goes through four stages; failures are
+      fed back for self-repair up to three times, and only what still looks uncertain is escalated to a
+      person.
+    </p>
+    <ol class="stages">
+      <li><span class="n">01</span><div><h4>Kernel</h4><p>Re-run the program and check B-rep validity &mdash; is the solid well-formed at all?</p></div></li>
+      <li><span class="n">02</span><div><h4>Dimension rules</h4><p>Wall thickness, hole-to-edge distance, dimensional tolerance, measured against thresholds in the project config.</p></div></li>
+      <li><span class="n">03</span><div><h4>Visual review</h4><p>Render before and after, and have a vision model score whether the change matches what was asked.</p></div></li>
+      <li><span class="n">04</span><div><h4>Type preservation</h4><p>Is it still the same kind of part? Reuses the part classifier from the prior project stage.</p></div></li>
+    </ol>
+    <p style="margin-top:20px">
+      Stages 2 and 3 are why the fixes in &sect;04 mattered before anything else: both measure the compiled
+      solid, so both inherit whatever the compiler got wrong.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="rail">§ 06<br>Status</div>
+  <div class="body">
+    <h2>What runs today</h2>
+    <p>
+      This is a twelve-month research project currently at M2 of twelve. The DSL layer is real and tested
+      against the kernel; the model, verification and deployment layers are scaffolded and not yet
+      implemented. The table is the honest version.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Component</th><th>State</th><th>Detail</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>dsl/</code> parser, AST, registry</td><td><span class="state done">working</span></td><td>Hand-written recursive descent, no parser generator. Grammar frozen at v1.</td></tr>
+          <tr><td><code>dsl/compiler.py</code> kernel backend</td><td><span class="state part">partial</span></td><td><code>sketch</code> and <code>extrude</code> execute on FreeCAD/OCCT. <code>pocket</code>, <code>fillet</code>, <code>chamfer</code>, <code>pattern</code>, <code>mirror</code> and history rebuild are the current milestone.</td></tr>
+          <tr><td><code>eval/</code> chain scoring</td><td><span class="state part">partial</span></td><td>Sequential-edit harness runs; the IoU metric is not implemented.</td></tr>
+          <tr><td><code>editor/</code> model and context</td><td><span class="state stub">scaffold</span></td><td>Fine-tuning and inference are M3+.</td></tr>
+          <tr><td><code>verify/</code> four-stage loop</td><td><span class="state stub">scaffold</span></td><td>M6.</td></tr>
+          <tr><td><code>deploy/</code> quantization, review UI</td><td><span class="state stub">scaffold</span></td><td>M10.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <code>edit()</code> &mdash; the project's primary operation, and the one every parameter-level metric
+      depends on &mdash; does not yet run against the kernel. It needs a replayable feature history, which is
+      the largest single gap in the current milestone.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="rail">§ 07<br>Targets</div>
+  <div class="body">
+    <h2>What the work has to hit</h2>
+    <p>
+      These are the acceptance targets for the twelve months, not measured results. Nothing in this table has
+      been measured yet &mdash; the model layer does not exist. They are here because they define what
+      counts as finished.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Metric</th><th>Target</th></tr></thead>
+        <tbody>
+          <tr><td>Parameter-level edit &mdash; IoU / parse rate</td><td class="num">&ge; 0.93 / &ge; 96%</td></tr>
+          <tr><td>Compound edit &mdash; IoU / parse rate</td><td class="num">&ge; 0.80 / &ge; 85%</td></tr>
+          <tr><td>Reference-break rate over a 5-step chain</td><td class="num">&lt; 5%</td></tr>
+          <tr><td>Defect recall / false-positive rate</td><td class="num">&ge; 95% / &le; 10%</td></tr>
+          <tr><td>Auto-confirm rate (human sees &le; 20%)</td><td class="num">&ge; 80%</td></tr>
+          <tr><td>Latency per edit, single 24 GB GPU</td><td class="num">&le; 30 s</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout">
+      <p>
+        All targets are measured on a held-out set of real conveyor parts. Scores on synthetic data do not
+        count as passing &mdash; which is also why the whole system has to run offline on an air-gapped
+        intranet, on one GPU.
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span>Reference-Stable DSL for LLM CAD Editing</span>
+  <span>FreeCAD 1.1.1 / OCCT &middot; Python 3.11</span>
+  <span>136 tests &middot; DSL v1 frozen</span>
+</footer>
+
+</div>
+
+<script>
+document.querySelectorAll(".switch button").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    var fig = btn.dataset.fig;
+    var frame = Number(btn.dataset.frame);
+    document.querySelectorAll('.switch button[data-fig="' + fig + '"]').forEach(function (b) {
+      b.setAttribute("aria-pressed", String(Number(b.dataset.frame) === frame));
+    });
+    var imgs = document.querySelectorAll('.frames[data-fig="' + fig + '"] img');
+    imgs.forEach(function (img, i) { img.hidden = i !== frame; });
+  });
+});
+</script>
+</body>
+</html>
