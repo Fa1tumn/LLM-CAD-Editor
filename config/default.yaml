@@ -25,6 +25,16 @@ verify:
   repair:
     max_self_repair: 3           # max rounds before HITL
 
+# assembly mating (proposed grammar.md §9 addendum; see docs/assembly-addendum.md)
+assembly:
+  min_engagement_ratio: 0.8      # thread engagement / nominal diameter, steel-into-steel
+  min_protrusion_mm: 1.5         # thread showing past the nut
+  # Recommended clearance-hole diameters, keyed by nominal fastener diameter.
+  # Deliberately empty: this is standards data (ISO 273 / the plant's own table) and
+  # must be entered and signed off by an engineer, not guessed. Until it is filled,
+  # clearance checking only asserts that the fastener physically fits through.
+  clearance_hole_mm: {}
+
 # operating tiers (proposal G5)
 operating:
   auto_confirm_target: 0.80      # auto-confirm target
