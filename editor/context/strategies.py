@@ -6,7 +6,9 @@ Compared on the same edit chain to measure the degradation curve:
 2. Current only: current-state DSL only
 3. Summarized: feature-tree summary + relevant subtree excerpt
 """
+
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 

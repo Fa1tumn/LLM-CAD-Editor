@@ -7,6 +7,7 @@ the grammar is small and this keeps the toolchain dependency-free.
 Pipeline: strip comments per line -> tokenize -> recursive-descent parse
 into Program/Statement/OpCall/Ref/Quantity nodes (dsl/ast.py).
 """
+
 from __future__ import annotations
 
 import re
@@ -52,7 +53,7 @@ def _tokenize(text: str) -> list[_Token]:
     tokens: list[_Token] = []
     lineno = 0
     for lineno, raw in enumerate(text.splitlines(), start=1):
-        code = raw.split("#", 1)[0]      # strip comments
+        code = raw.split("#", 1)[0]  # strip comments
         for m in _TOKEN_RE.finditer(code):
             kind = m.lastgroup
             if kind == "SKIP":

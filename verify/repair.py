@@ -9,7 +9,9 @@ as improvement data (proposal §10, "downstream application").
 
 Extends CADCodeVerify's generate-verify loop for the editing task.
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 

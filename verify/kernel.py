@@ -7,7 +7,9 @@ Re-generate the edited DSL with FreeCAD/OCCT and check:
 
 Prior work lacks this stage, so geometry-reasoning failures pass through undetected.
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass
 
 

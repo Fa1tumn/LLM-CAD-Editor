@@ -5,7 +5,9 @@ Data comes from data/synth (synthetic compound edits) + data/real_parts
 (real parts). Corresponds to milestone M3–M5 (first fine-tune round) and
 M8–M9 (second round).
 """
+
 from __future__ import annotations
+
 import argparse
 
 

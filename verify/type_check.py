@@ -7,7 +7,9 @@ e.g., that an edited shaft is still a shaft and an edited bracket is still
 a bracket. Only holds under this roadmap's cumulative structure; absent
 from prior work.
 """
+
 from __future__ import annotations
+
 from dataclasses import dataclass
 
 

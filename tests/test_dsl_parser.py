@@ -5,6 +5,7 @@ Covers the §3 basic example, the §6 replace/re-binding example, and the
 §7 5-step chain (the RQ2 benchmark chain) end to end, plus the
 replace/pattern/mirror/constraint validation added in dsl/ast.py.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -119,11 +120,11 @@ def test_parse_ref(ref_text, expected_path, expected_index):
 @pytest.mark.parametrize(
     "bad_statement",
     [
-        "replace(target=body);",                           # missing `with`
-        "replace(target=body, with=hex_sk);",               # `with` must be an op call
-        "pattern(feature=h1, type=triangular, count=4);",   # bad pattern type
-        "mirror(feature=h1);",                              # missing `plane`
-        "constraint(type=dim, on=body.length);",            # missing `value`
+        "replace(target=body);",  # missing `with`
+        "replace(target=body, with=hex_sk);",  # `with` must be an op call
+        "pattern(feature=h1, type=triangular, count=4);",  # bad pattern type
+        "mirror(feature=h1);",  # missing `plane`
+        "constraint(type=dim, on=body.length);",  # missing `value`
     ],
 )
 def test_new_op_validation_errors(bad_statement):

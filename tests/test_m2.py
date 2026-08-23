@@ -41,16 +41,21 @@ def test_registry_rebind_rewrites_graph_and_ast_refs():
 
 
 def test_score_chain_commits_only_valid_steps():
-    score = score_chain([
-        "sk = sketch(plane=XY, circle=[center=origin, r=20]); body = extrude(profile=sk, length=2);",
-        "h = pocket(on=body.face_top, depth=1);",
-        "bad = pocket(on=missing.face_top, depth=1);",
-        "p = pattern(feature=h, type=circular, count=4);",
-        "not valid DSL",
-    ])
+    score = score_chain(
+        [
+            "sk = sketch(plane=XY, circle=[center=origin, r=20]); body = extrude(profile=sk, length=2);",
+            "h = pocket(on=body.face_top, depth=1);",
+            "bad = pocket(on=missing.face_top, depth=1);",
+            "p = pattern(feature=h, type=circular, count=4);",
+            "not valid DSL",
+        ]
+    )
     assert [(s.parse_ok, s.refs_valid, s.prior_preserved) for s in score.steps] == [
-        (True, True, True), (True, True, True), (True, False, True),
-        (True, True, True), (False, False, True),
+        (True, True, True),
+        (True, True, True),
+        (True, False, True),
+        (True, True, True),
+        (False, False, True),
     ]
     assert score.ref_break_rate == pytest.approx(0.4)
 
