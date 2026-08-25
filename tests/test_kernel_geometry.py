@@ -74,6 +74,31 @@ def test_cylinder_radius_and_length_flow_through_independently():
     assert (shape.BoundBox.XLength, shape.BoundBox.ZLength) == pytest.approx((6.0, 7.0))
 
 
+def test_section_3_pocket_removes_the_requested_axial_volume():
+    shape = build(
+        "sk1 = sketch(plane=XY, circle=[center=origin, r=20]);\n"
+        "body = extrude(profile=sk1, length=200);\n"
+        "hole1 = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180);"
+    )
+    assert shape.ShapeType == "Solid"
+    assert shape.isValid()
+    assert shape.Volume == pytest.approx(math.pi * 20**2 * 200 - math.pi * 6**2 * 180)
+
+
+def test_section_3_example_runs_through_fillet_on_the_pocketed_body():
+    unfilleted_volume = math.pi * 20**2 * 200 - math.pi * 6**2 * 180
+    shape = build(
+        "sk1 = sketch(plane=XY, circle=[center=origin, r=20]);\n"
+        "body = extrude(profile=sk1, length=200);\n"
+        "hole1 = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180);\n"
+        "edge1 = fillet(on=body.edge_top, radius=2);"
+    )
+    assert shape.ShapeType == "Solid"
+    assert shape.isValid()
+    assert len(shape.Solids) == 1
+    assert 0 < shape.Volume < unfilleted_volume
+
+
 # --- rect -> Part.makeBox -------------------------------------------------------
 
 

@@ -59,6 +59,11 @@ BOTH_ACCEPT = {
     "circle_extrude": CIRCLE,
     "rect_extrude": RECT,
     "unnamed_extrude": UNNAMED,
+    "section_3": (
+        CIRCLE
+        + "\nhole1 = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180);"
+        + "\nedge1 = fillet(on=body.edge_top, radius=2);"
+    ),
 }
 
 # Programs rejected ABOVE the backend (compile_program dispatch guards + ReferenceRegistry),
@@ -131,14 +136,6 @@ KERNEL_ONLY_REJECTS = {
     "replace": (
         CIRCLE + "\nreplace(target=body, with=extrude(profile=sk, length=300));",
         "FreeCAD replacement requires feature-history rebuild",
-    ),
-    "pocket": (
-        CIRCLE + "\nh = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180);",
-        "FreeCAD backend operation not implemented: pocket",
-    ),
-    "fillet": (
-        CIRCLE + "\ne = fillet(on=body.edge_top, radius=2);",
-        "FreeCAD backend operation not implemented: fillet",
     ),
     "chamfer_unnamed": (
         CIRCLE + "\nchamfer(on=body.edge_top, dist=1.5);",
@@ -288,15 +285,13 @@ def test_replace_requires_feature_history_rebuild(kernel):
 
 
 # --------------------------------------------------------------------------------------
-# Unimplemented ops (M2 W1 backlog: pocket / fillet / chamfer / pattern / mirror ...)
+# Unimplemented ops (M2 W1 backlog: chamfer / pattern / mirror ...)
 # --------------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     "case",
     [
-        "pocket",
-        "fillet",
         "chamfer_unnamed",
         "revolve",
         "groove",

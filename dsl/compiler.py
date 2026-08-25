@@ -98,6 +98,9 @@ class FreeCADBackend:
         self.FreeCAD, self.Part = FreeCAD, Part
         self.doc = FreeCAD.newDocument("LLMCAD")
         self.objects: dict[str, Any] = {}
+        # Terminal solids only. Modifier features replace their input here,
+        # while ``objects`` keeps aliases such as ``body`` resolvable.
+        self.active_solids: dict[str, Any] = {}
         # feature name -> (point on its axis, unit direction), so `<feature>.axis`
         # can be resolved as a sketch anchor (grammar.md §5).
         self.axes: dict[str, tuple[Any, Any]] = {}
@@ -111,10 +114,11 @@ class FreeCADBackend:
         """
         if self.doc is None:
             raise CompileError("this FreeCADBackend has been closed")
-        for name in list(self.objects):
-            obj = self.objects.pop(name)
+        for obj in {obj.Name: obj for obj in self.objects.values() if hasattr(obj, "Name")}.values():
             if hasattr(obj, "Shape"):
                 self.doc.removeObject(obj.Name)
+        self.objects.clear()
+        self.active_solids.clear()
         self.axes.clear()
 
     def close(self) -> None:
@@ -130,6 +134,7 @@ class FreeCADBackend:
             self.FreeCAD.closeDocument(self.doc.Name)
             self.doc = None
         self.objects.clear()
+        self.active_solids.clear()
         self.axes.clear()
 
     def __enter__(self) -> FreeCADBackend:
@@ -215,6 +220,78 @@ class FreeCADBackend:
             )
         return candidate
 
+    def _source_for_role(self, value: Any, op: str, role: str) -> tuple[str, Any]:
+        """Resolve ``on=<feature>.<role>`` to the feature's current solid."""
+        if not isinstance(value, Ref) or len(value.path) != 2 or value.path[1] != role:
+            raise CompileError(f"{op} on must reference <feature>.{role}, got {value}")
+        root = value.path[0]
+        obj = self.objects.get(root)
+        if obj is None or not hasattr(obj, "Shape"):
+            raise CompileError(f"{op} target is not a compiled solid: {value}")
+        return root, obj
+
+    def _replace_tip(self, name: str, source: Any, shape: Any) -> Any:
+        """Append a PartDesign feature and make every source alias see the new tip."""
+        # Boolean operations may wrap one valid solid in a Compound. Feeding
+        # that wrapper to later Part fillet/chamfer calls produces bad topology.
+        if shape.ShapeType != "Solid" and len(shape.Solids) == 1:
+            shape = shape.Solids[0]
+        if shape.isNull() or not shape.isValid():
+            raise CompileError(f"{name} produced an invalid solid")
+        obj = self.doc.addObject("PartDesign::Feature", name)
+        obj.Shape = shape
+        for alias, current in list(self.objects.items()):
+            if current is source:
+                self.objects[alias] = obj
+        for active_name, current in list(self.active_solids.items()):
+            if current is source:
+                del self.active_solids[active_name]
+        self.objects[name] = obj
+        self.active_solids[name] = obj
+        return obj
+
+    def _pocket(self, name: str, args: dict[str, Any]) -> Any:
+        root, source = self._source_for_role(args.get("on"), "pocket", "face_top")
+        circle = args.get("circle")
+        if not isinstance(circle, dict):
+            raise CompileError("pocket currently supports circle=[center=..., r=...]")
+        depth = self._positive(args.get("depth"), "pocket depth")
+        base, direction = self.axes[root]
+        direction = direction.normalize()
+        top_projection = max(vertex.Point.dot(direction) for vertex in source.Shape.Vertexes)
+        top_center = base + direction * (top_projection - base.dot(direction))
+
+        center = circle.get("center")
+        if isinstance(center, Ref) and center.path in ([root, "axis"], ["origin"]):
+            cutter_center = top_center
+        else:
+            raise CompileError(f"pocket circle center must be origin or {root}.axis, got {center}")
+        cutter = self.Part.makeCylinder(
+            self._positive(circle.get("r"), "pocket circle r"), depth, cutter_center, -direction
+        )
+        result = self._replace_tip(name, source, source.Shape.cut(cutter))
+        self.axes[name] = (cutter_center - direction * (depth / 2), direction)
+        return result
+
+    def _fillet(self, name: str, args: dict[str, Any]) -> Any:
+        root, source = self._source_for_role(args.get("on"), "fillet", "edge_top")
+        radius = self._positive(args.get("radius"), "fillet radius")
+        _, direction = self.axes[root]
+        direction = direction.normalize()
+        projections = [edge.CenterOfMass.dot(direction) for edge in source.Shape.Edges]
+        top = max(projections)
+        candidates = [
+            edge
+            for edge, projection in zip(source.Shape.Edges, projections, strict=True)
+            if abs(projection - top) <= 1e-7
+        ]
+        # A pocketed cylinder has an outer and an inner rim at the top. The
+        # stable ``edge_top`` role denotes the outer (longer) one.
+        edge = max(candidates, key=lambda candidate: candidate.Length)
+        result = self._replace_tip(name, source, source.Shape.makeFillet(radius, [edge]))
+        self.axes[name] = self.axes[root]
+        return result
+
     def feature(self, name: str, op: str, args: dict[str, Any]) -> Any:
         if op == "sketch":
             self.objects[name] = deepcopy(args)
@@ -258,8 +335,13 @@ class FreeCADBackend:
             obj = self.doc.addObject("PartDesign::Feature", name)
             obj.Shape = shape
             self.objects[name] = obj
+            self.active_solids[name] = obj
             self.axes[name] = (obj.Shape.CenterOfMass, direction)
             return obj
+        if op == "pocket":
+            return self._pocket(name, args)
+        if op == "fillet":
+            return self._fillet(name, args)
         raise CompileError(f"FreeCAD backend operation not implemented: {op}")
 
     def edit(self, target: str, field_name: str, value: Any) -> None:
@@ -276,7 +358,7 @@ class FreeCADBackend:
         order rather than on modelling intent.
         """
         self.doc.recompute()
-        solids = [obj.Shape for obj in self.objects.values() if hasattr(obj, "Shape")]
+        solids = [obj.Shape for obj in self.active_solids.values()]
         if not solids:
             raise CompileError("program produced no solid")
         model = solids[0]
