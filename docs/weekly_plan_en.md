@@ -46,9 +46,13 @@ Deliverable & Files: `dsl/parser.py`
 **W1**
 - [x] Implement the §3 subset in `dsl/compiler.py`: AST → FreeCAD Part/PartDesign calls
 - [x] Get the §3 example (sketch/extrude/pocket/fillet) running end to end
+- [ ] Add a unified 2D `ProfileSpec` compiler layer that normalizes circle/rectangle/polygon/hex into one internal representation
+- [ ] Compile every 2D profile through FreeCAD `Edge → Closed Wire → Planar Face`, validating closure, duplicate points, zero area, and self-intersection
+- [ ] Refactor extrude and pocket to share the general Face path: extrude creates a Solid, while pocket creates a cutter and performs a boolean difference
+- [ ] Support coordinate transforms for non-XY planes and add stable symbolic-role → subshape resolution for `face_top`, `edge_top`, and `wall`
 - [ ] Complete the §4 operation set: revolve/chamfer/groove/edit/replace/pattern/mirror/constraint
 
-Deliverable & Files: `dsl/compiler.py`
+Deliverable & Files: `dsl/compiler.py`, Profile compiler/validation tests, and real-kernel tests for non-XY planes and chained modifiers
 
 **W2**
 - [x] Flesh out `dsl/registry.py` `rebind()`: actually rewrite the dependency graph and downstream Refs (not just return conflicts)

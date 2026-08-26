@@ -258,6 +258,56 @@ README 和 `docs/visual_test_guide.md` 已同步更新。
 
 后续首先增加统一的二维 Profile 编译层，消除当前 circle/rectangle 对 FreeCAD primitive 的硬编码。
 
+当前实现是按图形类型直接选择 primitive：
+
+```text
+DSL sketch
+   ├── circle → Part.makeCylinder()
+   └── rect   → Part.makeBox()
+```
+
+这种方式可以快速生成圆柱和长方体，但每增加一种图形都需要在 extrude/pocket 中增加新的特殊分支，
+profile 校验、平面变换和后续稳定引用也难以复用。
+
+目标结构是先把所有二维图形规范化为同一种拓扑 Profile：
+
+```text
+DSL sketch
+   ↓
+ProfileSpec
+   ↓
+FreeCAD Edge collection
+   ↓
+Closed Wire
+   ↓
+Planar Face
+   ├── extrude → Solid
+   └── pocket  → Cutter → Boolean cut
+```
+
+这条流程可以简单理解为“描述图形 → 画出边线 → 闭合轮廓 → 填成平面 → 拉伸或切除”：
+
+| 阶段 | 简单理解 | 实际作用 |
+|---|---|---|
+| DSL sketch | 用户写下想画的二维图形 | 提供平面、类型、尺寸和参考位置 |
+| ProfileSpec | 把不同写法整理成统一的图形说明卡 | 统一 circle/rect/polygon/hex、单位和坐标系 |
+| Edge collection | 画出组成轮廓的线或圆弧 | Rectangle 是 4 条线，hex 是 6 条线，circle 是 1 条闭合圆边 |
+| Closed Wire | 把所有边首尾连接成封闭线框 | 检查断口、重复点、零面积和自相交 |
+| Planar Face | 给封闭线框填充一个有面积的平面 | 得到可以执行三维操作的二维 Face |
+| Extrude | 沿一个方向把 Face 拉高 | 生成真正的三维 Solid |
+| Pocket | 把 Face 拉伸成刀具体，再从原 Solid 中减掉 | 生成孔、槽或其他切除结构 |
+
+例如矩形不再直接调用 `makeBox()`，而是执行：
+
+```text
+4 rectangle edges → closed rectangle Wire → filled Face
+                                              ├── pull upward → box-like Solid
+                                              └── pull downward → Cutter → pocket
+```
+
+这样增加 polygon 或 hex 时，只需要增加“如何生成 Edge”，后面的 Wire、Face、extrude 和 pocket
+可以全部复用。
+
 ```mermaid
 flowchart TD
     A[DSL sketch] --> B{Profile type}

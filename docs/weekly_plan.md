@@ -46,9 +46,13 @@
 **W1**
 - [x] 实现 `dsl/compiler.py` 的 §3 子集：AST → FreeCAD Part/PartDesign 调用
 - [x] 跑通 §3 示例（sketch/extrude/pocket/fillet）
+- [ ] 增加统一的二维 `ProfileSpec` 编译层，将 circle/rectangle/polygon/hex 规范化为同一种内部表示
+- [ ] 将所有二维轮廓统一编译为 FreeCAD `Edge → Closed Wire → Planar Face`，并校验闭合、重复点、零面积和自相交
+- [ ] 重构 extrude 和 pocket，使两者复用通用 Face：extrude 生成 Solid，pocket 生成 cutter 后执行布尔差
+- [ ] 支持非 XY 平面的坐标变换，并建立 `face_top`、`edge_top`、`wall` 的稳定 symbolic-role → subshape 解析
 - [ ] 补齐 §4 operation set：revolve/chamfer/groove/edit/replace/pattern/mirror/constraint
 
-产出与文件：`dsl/compiler.py`
+产出与文件：`dsl/compiler.py`、Profile 编译与校验测试、非 XY 平面及连续 modifier 内核测试
 
 **W2**
 - [x] 完善 `dsl/registry.py` 的 `rebind()`：真正改写依赖图与下游 Ref（而不只是返回冲突列表）

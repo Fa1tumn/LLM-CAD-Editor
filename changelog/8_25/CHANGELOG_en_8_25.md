@@ -228,6 +228,58 @@ README and `docs/visual_test_guide.md` now document this workflow.
 The next compiler step is a unified 2D Profile layer that removes the current hard-coded mapping from
 circle/rectangle profiles to FreeCAD primitives.
 
+The current implementation selects a primitive directly from the profile type:
+
+```text
+DSL sketch
+   ├── circle → Part.makeCylinder()
+   └── rect   → Part.makeBox()
+```
+
+This produces cylinders and boxes quickly, but every additional profile requires another special
+branch in extrude/pocket, while profile validation, plane transforms, and stable references cannot be
+shared cleanly.
+
+The target design first normalizes every 2D shape into one topological Profile pipeline:
+
+```text
+DSL sketch
+   ↓
+ProfileSpec
+   ↓
+FreeCAD Edge collection
+   ↓
+Closed Wire
+   ↓
+Planar Face
+   ├── extrude → Solid
+   └── pocket  → Cutter → Boolean cut
+```
+
+In simple terms, the pipeline means “describe the shape → draw its edges → close the outline → fill
+the outline → pull it into a solid or use it to remove material”:
+
+| Stage | Simple meaning | Actual role |
+|---|---|---|
+| DSL sketch | The user describes the required 2D shape | Provides the plane, type, dimensions, and reference position |
+| ProfileSpec | Normalize every shape into one internal description | Unifies circle/rect/polygon/hex, units, and coordinate frames |
+| Edge collection | Draw the lines or curves around the profile | A rectangle has 4 lines, a hex has 6, and a circle has 1 closed edge |
+| Closed Wire | Connect all edges into one closed outline | Checks gaps, duplicate points, zero area, and self-intersection |
+| Planar Face | Fill the closed outline with an area | Produces the 2D Face required by 3D operations |
+| Extrude | Pull the Face along a direction | Produces a real 3D Solid |
+| Pocket | Pull the Face into a cutter and subtract it | Produces holes, slots, and other removed features |
+
+A rectangle is no longer sent directly to `makeBox()`. It follows the shared pipeline:
+
+```text
+4 rectangle edges → closed rectangle Wire → filled Face
+                                              ├── pull upward → box-like Solid
+                                              └── pull downward → Cutter → pocket
+```
+
+Adding polygon or hex support then requires only a new Edge generator; Wire, Face, extrude, and pocket
+remain shared.
+
 ```mermaid
 flowchart TD
     A[DSL sketch] --> B{Profile type}
