@@ -5,6 +5,8 @@
 > Four research questions: RQ1 `dsl/`,`data/` · RQ2 `editor/context/` · RQ3 `verify/` · RQ4 `data/real_parts/`,`deploy/`
 >
 > 中文版: [`docs/weekly_plan.md`](weekly_plan.md)
+>
+> The physics-verification extension follows P0–P6 in [`physics-cad-dsl-design-spec.md`](physics-cad-dsl-design-spec.md). This plan preserves the original M1–M12 deliverables while adding the geometry-fidelity, units, selectors, enforced-constraint, and evidence prerequisites for the next stage. Tier 3 proceeds only after its entry gates pass; M12 makes only a go/no-go decision for Tier 2.
 
 ---
 
@@ -51,8 +53,10 @@ Deliverable & Files: `dsl/parser.py`
 - [ ] Refactor extrude and pocket to share the general Face path: extrude creates a Solid, while pocket creates a cutter and performs a boolean difference
 - [ ] Support coordinate transforms for non-XY planes and add stable symbolic-role → subshape resolution for `face_top`, `edge_top`, and `wall`
 - [ ] Complete the §4 operation set: revolve/chamfer/groove/edit/replace/pattern/mirror/constraint
+- [ ] Complete the P0 geometry-fidelity gate: define provenance, geometric signatures, and cardinality for `ResolvedSubshape`
+- [ ] Test every parsed argument for an observable effect or an explicit `CompileError`; never ignore it silently
 
-Deliverable & Files: `dsl/compiler.py`, Profile compiler/validation tests, and real-kernel tests for non-XY planes and chained modifiers
+Deliverable & Files: `dsl/compiler.py`, Profile compiler/validation tests, real-kernel tests for non-XY planes and chained modifiers, and the P0 acceptance report
 
 **W2**
 - [x] Flesh out `dsl/registry.py` `rebind()`: actually rewrite the dependency graph and downstream Refs (not just return conflicts)
@@ -82,15 +86,19 @@ Deliverable & Files: `eval/benchmarks/`, `dsl/grammar.md`
 **W1**
 - [ ] `data/synth/synthesize.py`: implement `synthesize_pairs()` for the cylinder→prism replace transform
 - [ ] Kernel filtering stubbed until M6 lands
+- [ ] Freeze the v2 typed IR and minimal ASCII unit table for `Quantity`, dimensions, and tolerances
+- [ ] Implement normalization, serialization round trips, and invalid-dimension tests; non-length quantities require units
 
-Deliverable & Files: `data/synth/synthesize.py`
+Deliverable & Files: `data/synth/synthesize.py`, `dsl/units.py`, `dsl/ir.py`
 
 **W2**
 - [ ] Add the fillet↔chamfer transform
 - [ ] Add the hole-pattern-change transform
 - [ ] Target throughput for the 30k-instruction dataset v1
+- [ ] Freeze structured `select_faces`/`select_edges` syntax, filters, and `expect=one|many` failure semantics
+- [ ] Implement a selector AST → `ResolvedSubshape` vertical slice; 0/N matches never silently select the first result
 
-Deliverable & Files: `data/synth/synthesize.py`
+Deliverable & Files: `data/synth/synthesize.py`, `dsl/selectors.py`, selector parser/validator tests
 
 **W3**
 - [ ] `data/instruct/generate.py`: wire render-pair + DSL-pair into the VLM
@@ -102,6 +110,7 @@ Deliverable & Files: `data/instruct/generate.py`
 - [ ] Extend to operation-level instructions
 - [ ] Extend to functional-level instructions
 - [ ] Add the compound-edit-specific types (replace / restructure / constraint-preserving)
+- [ ] Generate training examples only for v2 constructs with parser, validator, compiler/verifier, and negative-test coverage
 
 Deliverable & Files: `data/instruct/generate.py`
 
@@ -131,6 +140,7 @@ Deliverable & Files: `scripts/train.py`
 - [ ] Data QA: dedup
 - [ ] Data QA: validity spot-check
 - [ ] Freeze dataset v1
+- [ ] Data QA: validate dimensions, selector cardinality, and DSL version labels
 
 Deliverable & Files: `data/synth/`, `data/real_parts/`
 
@@ -146,6 +156,7 @@ Deliverable & Files: `scripts/train.py`
 **W2**
 - [ ] `editor/model.py` `generate()`: implement the valid_refs constrained-decoding hook
 - [ ] This is RQ2 groundwork, reused later by context strategies
+- [ ] Include valid units, selector filters, `expect` cardinality, and DSL version in constrained-decoding context
 
 Deliverable & Files: `editor/model.py`
 
@@ -165,11 +176,12 @@ Deliverable & Files: `eval/metrics.py`
 
 ---
 
-## M6 — Four-Stage Verification Loop
+## M6 — Enforced Constraints + Four-Stage Verification Loop
 
 **W1**
 - [ ] `verify/kernel.py` `check()`: re-run via `dsl/compiler.py`
 - [ ] Validate B-rep (self-intersection, open shell)
+- [ ] Define unified `VerificationEvidence` with pass/fail/inconclusive, level, assumptions, and provenance
 
 Deliverable & Files: `verify/kernel.py`
 
@@ -177,8 +189,10 @@ Deliverable & Files: `verify/kernel.py`
 - [ ] `verify/rules.py` `check()`: measure min wall thickness via trimesh/shapely
 - [ ] Measure hole-edge distance
 - [ ] Measure instruction-vs-result dimension against `config/default.yaml` thresholds
+- [ ] Add `verify/constraints.py` and turn `constraint` from advisory into enforced
+- [ ] Initially cover positive dimensions, closed profiles, hole margins, minimum wall, and worst-case tolerance fits; `unknown` never auto-passes
 
-Deliverable & Files: `verify/rules.py`
+Deliverable & Files: `verify/rules.py`, `verify/constraints.py`
 
 **W3**
 - [ ] `verify/visual.py` `check()`: VLM scoring of before/after renders (1–5)
@@ -189,16 +203,18 @@ Deliverable & Files: `verify/visual.py`
 **W4**
 - [ ] `verify/type_check.py` `check()`: reuse the prior-stage part classifier
 - [ ] Confirm the type is preserved pre/post edit
+- [ ] Select the first Tier-1 part family (solid-shaft torsion or rectangular cantilever), and freeze applicability conditions, material fields, and hand-calculated references
 
 Deliverable & Files: `verify/type_check.py`
 
 ---
 
-## M7 — Self-Repair Loop + Mid-Term Demo
+## M7 — Self-Repair Loop + Tier-1 Physics Vertical Slice
 
 **W1**
 - [ ] `verify/repair.py` `run()`: chain kernel→rules→visual→type_check
 - [ ] Structure failures and feed back into `editor/infer.py` regeneration
+- [ ] Make self-repair consume unified evidence; inconclusive never counts as a successful automatic repair
 
 Deliverable & Files: `verify/repair.py`
 
@@ -211,16 +227,18 @@ Deliverable & Files: `verify/repair.py`, `config/default.yaml`
 **W3**
 - [ ] Inject `defect_injection/` cases (boundary-crossing holes, pipe-joint gaps, over-editing)
 - [ ] Run the first G4 test via `eval/metrics.py` `defect_recall()`
+- [ ] Implement one part-family check in `physics/analytical.py`: validate applicability first, then report margin, safety factor, and assumptions
 
 Deliverable & Files: `eval/benchmarks/defect_injection/`, `eval/metrics.py`
 
 **W4**
 - [ ] Mid-term demo prep: run the full `scripts/run_edit.py` pipeline (editor.infer → verify.repair → output) on real parts
 - [ ] Freeze the demo script/slides
+- [ ] Display `built`, `checked`, `proved_analytical`, and `inconclusive` as distinct outcomes
 
 Deliverable & Files: `scripts/run_edit.py`
 
-- [ ] **Milestone (end of M7)**: Mid-term demo (first G4 test)
+- [ ] **Milestone (end of M7)**: Mid-term demo (first G4 test + Tier-1 evidence vertical slice)
 
 ---
 
@@ -239,6 +257,7 @@ Deliverable & Files: `editor/context/strategies.py`
 **W3**
 - [ ] Run the FullHistory / CurrentOnly / SummarizedSubtree comparison across the 3/5/10-step benchmarks, measure the degradation curve
 - [ ] `ref_break_rate` → G3 measurement (5-step target <5%)
+- [ ] Add selector-stability benchmarks after parameter sweeps and structural replacement; report resolution and wrong-binding rates separately
 
 Deliverable & Files: `eval/benchmarks/`, `eval/harness.py`
 
@@ -256,6 +275,7 @@ Deliverable & Files: `data/real_parts/`
 - [ ] Rebuild the training set: v1 synthetic data
 - [ ] Add round-2 real-part edits
 - [ ] Add hard cases surfaced in M7–M8
+- [ ] Add implemented units, selectors, constraints, and Tier-1 diagnostics while retaining DSL version labels
 
 Deliverable & Files: `data/synth/`, `data/real_parts/`
 
@@ -304,6 +324,7 @@ Deliverable & Files: `deploy/quantize.py`
 **W4**
 - [ ] Full held-out evaluation pass for G1, G2, G4 on `data/real_parts`
 - [ ] This is the only set that counts per README
+- [ ] Run the P5 entry check: real material/load/support data, P0–P4 status, and offline Gmsh/CalculiX packaging
 
 Deliverable & Files: `data/real_parts/`, `eval/`
 
@@ -316,12 +337,14 @@ Deliverable & Files: `data/real_parts/`, `eval/`
 - [ ] NL input
 - [ ] Before/after 3D diff
 - [ ] Approve/reject buttons
+- [ ] Show evidence level, assumptions, safety margin, selector targets, and provenance; never label oracle output as mathematical proof
 
 Deliverable & Files: `deploy/ui/`
 
 **W2**
 - [ ] Wire review decisions back into training data (via `verify/repair.py`'s escalated_to_human / failure_log path)
 - [ ] Pilot on a small batch of real edits
+- [ ] If P5 passes: implement Gmsh physical groups/mesh-quality gates, CalculiX `.inp`, convergence checks, and result parsing; otherwise record no-go evidence
 
 Deliverable & Files: `deploy/ui/`, `verify/repair.py`
 
@@ -353,6 +376,7 @@ Deliverable & Files: —
 - [ ] Address risk-register item R1 (re-binding conflict incidence) in the limitations/discussion section
 - [ ] Address R2 (incremental-verification overhead)
 - [ ] Address R4 (synthetic-vs-real gap)
+- [ ] Document static/analytical/oracle trust boundaries; do not describe an FEA pass as unconditional proof of safety
 
 Deliverable & Files: —
 
@@ -366,6 +390,7 @@ Deliverable & Files: whole repo
 **W4**
 - [ ] Submit the final report
 - [ ] Retrospective on items deferred to future work
+- [ ] Use the Tier-1 coverage gap and Tier-3 cost to make a go/no-go decision and separate budget for Tier-2 verified numerics/dReal/a proof assistant
 
 Deliverable & Files: —
 
@@ -383,5 +408,9 @@ Deliverable & Files: —
 | G4 defect recall/FP | M7 W3 first test | M10 W4 → M11 W4 |
 | G5 auto-confirm rate | M11 W3 | M11 W4 |
 | G6 latency/edit | M10 W3 | M10 W3 |
+| P1 invalid-dimension false negatives | M3 W1 | M11 W4 (target 0) |
+| P2 selector resolution/wrong binding | M3 W2 smoke test | M8 W3 → M11 W4 |
+| P3 constraint fail/unknown false pass | M6 W2 | M11 W4 (target 0) |
+| P4 physics-evidence completeness | M7 W3 | M11 W4 (target 100%) |
 
 All targets are measured on the held-out real-part set; synthetic-data scores do not count as passing (see `README.md`).
