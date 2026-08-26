@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import html
 import subprocess
 import sys
@@ -24,29 +25,37 @@ BASE = """sk1 = sketch(plane=XY, circle=[center=origin, r=20]);
 body = extrude(profile=sk1, length=200);"""
 POCKET = BASE + "\nhole1 = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180);"
 FULL = POCKET + "\nedge1 = fillet(on=body.edge_top, radius=2);"
-TEST_COMMAND = [
-    sys.executable,
-    "-m",
-    "pytest",
-    "-q",
+TEST_NAMES = [
     "tests/test_kernel_geometry.py::test_section_3_pocket_removes_the_requested_axial_volume",
     "tests/test_kernel_geometry.py::test_section_3_example_runs_through_fillet_on_the_pocketed_body",
 ]
-TEST_CODE = """def test_section_3_geometry():
-    pocket = build(POCKET)
-    assert pocket.ShapeType == "Solid"
-    assert pocket.isValid()
-    assert pocket.Volume == approx(pi * 20**2 * 200 - pi * 6**2 * 180)
-
-    fillet = build(FULL)
-    assert fillet.ShapeType == "Solid"
-    assert fillet.isValid()
-    assert len(fillet.Solids) == 1
-    assert 0 < fillet.Volume < pocket.Volume"""
+TEST_COMMAND = [sys.executable, "-m", "pytest", "-q", *TEST_NAMES]
 
 
 def _build(source: str):
     return compile_program(parse(source))
+
+
+def _actual_test_source() -> str:
+    """Read the exact pytest functions executed by this report."""
+    test_path = OUT.parent.parent / "tests" / "test_kernel_geometry.py"
+    source = test_path.read_text(encoding="utf-8")
+    lines = source.splitlines()
+    wanted = {name.rsplit("::", 1)[1] for name in TEST_NAMES}
+    tree = ast.parse(source)
+    blocks = [
+        "\n".join(lines[node.lineno - 1 : node.end_lineno])
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted
+    ]
+    if len(blocks) != len(wanted):
+        missing = wanted - {
+            node.name
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted
+        }
+        raise RuntimeError(f"cannot locate report test source: {', '.join(sorted(missing))}")
+    return "\n\n".join(blocks)
 
 
 def _render(
@@ -108,13 +117,14 @@ def main() -> None:
         <figure><img src="{name}-top.png" alt="{name} enlarged top"><figcaption>Top 32 mm enlarged</figcaption></figure>
         <figure><img src="{name}-section.png" alt="{name} longitudinal section"><figcaption>Longitudinal section</figcaption></figure></div>
         <dl><dt>Type</dt><dd>{shape.ShapeType}</dd><dt>Valid</dt><dd>{shape.isValid()}</dd>
-        <dt>Solids</dt><dd>{len(shape.Solids)}</dd><dt>Volume</dt><dd>{shape.Volume:.3f} mm³</dd></dl></article>"""
+        <dt>Solids</dt><dd>{len(shape.Solids)}</dd><dt>Volume</dt><dd>{shape.Volume:.3f} mm³</dd>
+        <dt>Optimal bounds</dt><dd>{shape.optimalBoundingBox().XLength:.1f} × {shape.optimalBoundingBox().YLength:.1f} × {shape.optimalBoundingBox().ZLength:.1f} mm</dd></dl></article>"""
         for name, shape, _ in rows
     )
     source = html.escape(FULL)
     test_run = subprocess.run(TEST_COMMAND, cwd=OUT.parent.parent, capture_output=True, text=True, check=False)
     test_output = html.escape((test_run.stdout + test_run.stderr).strip())
-    test_code = html.escape(TEST_CODE)
+    test_code = html.escape(_actual_test_source())
     test_status = "PASS" if test_run.returncode == 0 else "FAIL"
     test_class = "pass" if test_run.returncode == 0 else "fail"
     report = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">

@@ -72,6 +72,28 @@ NEW_OP_REQUIRED_ARGS: dict[str, set[str]] = {
 
 PATTERN_TYPES = {"linear", "circular"}
 
+# Frozen grammar.md §4 operations plus the assembly addendum and the `hex(...)`
+# profile constructor used by grammar.md §7. Keeping this set closed prevents a
+# misspelled operation from scoring as a valid symbolic program.
+KNOWN_OPERATIONS = {
+    "sketch",
+    "extrude",
+    "revolve",
+    "fillet",
+    "chamfer",
+    "pocket",
+    "groove",
+    "edit",
+    "replace",
+    "pattern",
+    "mirror",
+    "constraint",
+    "thread",
+    "interface",
+    "mate",
+    "hex",
+}
+
 
 class ASTValidationError(Exception):
     """A statement/op-call violates one of the new ops' grammar requirements."""
@@ -83,6 +105,8 @@ def validate_new_op(op: str, args: dict) -> None:
     A no-op for any other operation — base ops (sketch/extrude/...) aren't
     validated here.
     """
+    if op not in KNOWN_OPERATIONS:
+        raise ASTValidationError(f"unknown operation: {op}")
     required = NEW_OP_REQUIRED_ARGS.get(op)
     if required is None:
         return

@@ -102,6 +102,8 @@ class ReferenceRegistry:
                 raise ReferenceError("empty reference")
             root = ref.path[0]
             if root in LITERAL_ROOTS:
+                if len(ref.path) != 1 or ref.index is not None:
+                    raise ReferenceError(f"literal reference cannot be derived or indexed: {ref}")
                 continue
             if not self.is_valid(ref.path):
                 raise ReferenceError(f"dangling reference: {ref}")

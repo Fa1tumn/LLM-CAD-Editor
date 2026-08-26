@@ -1,0 +1,15 @@
+# Core DSL and configuration
+pyyaml>=6.0
+numpy>=1.24
+
+# Testing and development
+pytest>=8.0
+ruff>=0.16
+
+# CAD data, evaluation, and visual reports
+datasets>=2.18
+trimesh>=4.0
+shapely>=2.0
+matplotlib>=3.8
+
+# FreeCAD is installed from conda-forge or a system package, not pip.

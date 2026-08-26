@@ -17,8 +17,15 @@ Run all commands from the repository root:
 cd /home/ts01088978343/LLM-CAD-Editor
 ```
 
-The project environment must already contain FreeCAD, pytest, NumPy, and Matplotlib. Verify that
-FreeCAD is available:
+Create the Linux CAD development environment if it does not exist yet:
+
+```bash
+micromamba create -y -p "$PWD/.venv" -f environment.yml
+echo "$PWD/.venv/lib" > .venv/lib/python3.11/site-packages/freecad.pth
+```
+
+The project environment contains FreeCAD, pytest, NumPy, and Matplotlib. Verify that FreeCAD is
+available:
 
 ```bash
 .venv/bin/python -c "import FreeCAD, Part; print(FreeCAD.Version())"

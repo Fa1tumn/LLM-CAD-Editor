@@ -1,0 +1,15 @@
+name: llm-cad-editor
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - freecad=1.1.*
+  - pip
+  - pyyaml>=6.0
+  - numpy>=1.24
+  - pytest>=8.0
+  - ruff>=0.16
+  - datasets>=2.18
+  - trimesh>=4.0
+  - shapely>=2.0
+  - matplotlib>=3.8

@@ -114,9 +114,11 @@ class FreeCADBackend:
         """
         if self.doc is None:
             raise CompileError("this FreeCADBackend has been closed")
-        for obj in {obj.Name: obj for obj in self.objects.values() if hasattr(obj, "Name")}.values():
-            if hasattr(obj, "Shape"):
-                self.doc.removeObject(obj.Name)
+        # The document belongs exclusively to this backend. Iterating the
+        # document itself also removes superseded modifier-history objects that
+        # no longer have an alias in ``self.objects``.
+        for obj in list(self.doc.Objects):
+            self.doc.removeObject(obj.Name)
         self.objects.clear()
         self.active_solids.clear()
         self.axes.clear()
@@ -159,6 +161,8 @@ class FreeCADBackend:
         a raw kernel error outside the compiler's error channel. Check both here so
         the two profile branches fail the same way.
         """
+        if isinstance(value, Quantity) and value.unit not in {None, "mm"}:
+            raise CompileError(f"{what} must use mm, got {value.unit}")
         number = self._number(value)
         if number <= 0:
             raise CompileError(f"{what} must be positive, got {number:g}")

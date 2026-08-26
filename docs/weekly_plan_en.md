@@ -44,8 +44,9 @@ Deliverable & Files: `dsl/parser.py`
 ## M2 — Compiler + Eval Harness v1
 
 **W1**
-- [x] Implement `dsl/compiler.py`: AST → FreeCAD Part/PartDesign calls
+- [x] Implement the §3 subset in `dsl/compiler.py`: AST → FreeCAD Part/PartDesign calls
 - [x] Get the §3 example (sketch/extrude/pocket/fillet) running end to end
+- [ ] Complete the §4 operation set: revolve/chamfer/groove/edit/replace/pattern/mirror/constraint
 
 Deliverable & Files: `dsl/compiler.py`
 

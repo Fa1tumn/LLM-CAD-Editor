@@ -1,0 +1,6 @@
+# Training and inference dependencies for the 24 GB GPU host
+torch>=2.1
+transformers>=4.40
+peft>=0.10
+accelerate>=0.28
+bitsandbytes>=0.43

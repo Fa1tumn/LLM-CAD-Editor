@@ -114,16 +114,25 @@ See `docs/weekly_plan.md` for the week-by-week breakdown of each milestone below
 
 ## Setup
 
-FreeCAD is a required dependency and is **not** pip-installable, so the venv must be created from
-FreeCAD's own bundled Python — a venv built from system Python cannot import `FreeCAD` / `Part`.
+FreeCAD is a required dependency and is **not** pip-installable. Use the platform-specific setup
+below so `import FreeCAD` and `import Part` work from the project environment.
+
+### Linux (micromamba)
 
 ```bash
-# macOS (brew install --cask freecad); on Linux use the prefix containing FreeCAD.so
+micromamba create -y -p "$PWD/.venv" -f environment.yml
+echo "$PWD/.venv/lib" > .venv/lib/python3.11/site-packages/freecad.pth
+```
+
+### macOS
+
+```bash
+# brew install --cask freecad
 FC=/Applications/FreeCAD.app/Contents/Resources
 
 "$FC/bin/python" -m venv .venv                      # FreeCAD ships conda-forge Python 3.11
 echo "$FC/lib" > .venv/lib/python3.11/site-packages/freecad.pth
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements-cad.txt
 ```
 
 Verify all three before starting work:
@@ -136,6 +145,10 @@ Verify all three before starting work:
 
 `SymbolicBackend` is a fallback for machines without the kernel, not the target backend. The heavy ML
 stack (torch, transformers, peft, bitsandbytes) targets the 24GB-GPU training host and is not needed
-for DSL or verification work.
+for DSL or verification work. Install it separately with
+`.venv/bin/pip install -r requirements-training.txt` on that host.
 
 The `/setup-env` skill runs and checks all of the above.
+
+See `docs/compiler_status.md` for the exact implemented operation subset and known geometry
+limitations. See `docs/visual_test_guide.md` for the HTML/PNG/STL visual test workflow.

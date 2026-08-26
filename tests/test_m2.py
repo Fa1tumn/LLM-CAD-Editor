@@ -5,7 +5,7 @@ import pytest
 from dsl.ast import Quantity, Ref
 from dsl.compiler import SymbolicBackend, compile_program
 from dsl.parser import parse
-from dsl.registry import ReferenceRegistry
+from dsl.registry import ReferenceError, ReferenceRegistry
 from eval.harness import load_chain, score_chain
 
 
@@ -58,6 +58,17 @@ def test_score_chain_commits_only_valid_steps():
         (False, False, True),
     ]
     assert score.ref_break_rate == pytest.approx(0.4)
+
+
+def test_literal_roots_cannot_hide_malformed_derived_references():
+    program = parse("sk = sketch(plane=XY); b = extrude(profile=XY.axis, length=2);")
+    with pytest.raises(ReferenceError, match="literal reference cannot be derived or indexed: XY.axis"):
+        compile_program(program, SymbolicBackend())
+
+
+def test_unknown_operation_counts_as_a_parse_failure_in_chain_scoring():
+    step = score_chain(["x = widget();"]).steps[0]
+    assert (step.parse_ok, step.refs_valid, step.prior_preserved) == (False, False, True)
 
 
 @pytest.mark.parametrize("length", [3, 5, 10])

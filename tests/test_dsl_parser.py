@@ -141,3 +141,18 @@ def test_syntax_error_reports_line_number():
 def test_quantity_unit_parsing():
     prog = parse("edit(target=body, set=length, value=250 mm);")
     assert prog.statements[0].args["value"] == Quantity(value=250.0, unit="mm")
+
+
+def test_unknown_operation_is_rejected_at_parse_time():
+    with pytest.raises(ParseError, match="unknown operation: widget"):
+        parse("x = widget();")
+
+
+def test_duplicate_argument_is_rejected_instead_of_overwriting_the_first_value():
+    with pytest.raises(ParseError, match="duplicate argument 'plane'"):
+        parse("sk = sketch(plane=XY, plane=YZ);")
+
+
+def test_identifier_alphabet_matches_the_frozen_ascii_grammar():
+    with pytest.raises(ParseError, match="unexpected character"):
+        parse("part\N{LATIN SMALL LETTER E WITH ACUTE} = sketch(plane=XY);")

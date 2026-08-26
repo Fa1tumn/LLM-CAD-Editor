@@ -99,6 +99,16 @@ def test_section_3_example_runs_through_fillet_on_the_pocketed_body():
     assert 0 < shape.Volume < unfilleted_volume
 
 
+def test_fillet_dimensions_use_occt_optimal_bounds():
+    shape = build(
+        "sk = sketch(plane=XY, circle=[center=origin, r=20]);\n"
+        "body = extrude(profile=sk, length=200);\n"
+        "round = fillet(on=body.edge_top, radius=2);"
+    )
+    box = shape.optimalBoundingBox()
+    assert (box.XLength, box.YLength, box.ZLength) == pytest.approx((40.0, 40.0, 200.0))
+
+
 # --- rect -> Part.makeBox -------------------------------------------------------
 
 
@@ -144,8 +154,7 @@ def test_float_literals_reach_the_kernel_unrounded():
     ) == pytest.approx((1.5, 2.5, 4.0))
 
 
-def test_unit_suffix_is_dropped_and_the_magnitude_is_used_verbatim():
-    """`_number` returns Quantity.value and discards `.unit` (compiler.py:84-89)."""
+def test_mm_suffix_and_bare_dimensions_have_the_same_geometry():
     with_units = build(
         "sk = sketch(plane=XY, circle=[center=origin, r=2 mm]);\nb = extrude(profile=sk, length=10 mm);"
     )
@@ -460,6 +469,25 @@ def test_reset_clears_state_without_closing_the_document():
     assert backend.objects == {}
     assert backend.axes == {}
     assert backend.doc.Objects == []
+
+
+def test_reset_removes_superseded_pocket_and_fillet_history_objects():
+    backend = FreeCADBackend()
+    compile_program(
+        parse(
+            "sk = sketch(plane=XY, circle=[center=origin, r=20]);\n"
+            "body = extrude(profile=sk, length=200);\n"
+            "hole = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180);\n"
+            "round = fillet(on=body.edge_top, radius=2);"
+        ),
+        backend,
+    )
+    assert [obj.Name for obj in backend.doc.Objects] == ["body", "hole", "round"]
+    backend.reset()
+    assert backend.doc.Objects == []
+    assert backend.objects == {}
+    assert backend.active_solids == {}
+    assert backend.axes == {}
 
 
 # --- document lifecycle (issue #9) ----------------------------------------------

@@ -44,8 +44,9 @@
 ## M2 — 编译执行 + 评估框架 v1
 
 **W1**
-- [x] 实现 `dsl/compiler.py`：AST → FreeCAD Part/PartDesign 调用
+- [x] 实现 `dsl/compiler.py` 的 §3 子集：AST → FreeCAD Part/PartDesign 调用
 - [x] 跑通 §3 示例（sketch/extrude/pocket/fillet）
+- [ ] 补齐 §4 operation set：revolve/chamfer/groove/edit/replace/pattern/mirror/constraint
 
 产出与文件：`dsl/compiler.py`
 

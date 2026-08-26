@@ -409,6 +409,31 @@ def test_degenerate_dimensions_are_rejected_symmetrically(kernel):
     )
 
 
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        (
+            "sk = sketch(plane=XY, circle=[center=origin, r=2 deg]);\n"
+            "body = extrude(profile=sk, length=10);",
+            "circle r must use mm, got deg",
+        ),
+        (
+            "sk = sketch(plane=XY, circle=[center=origin, r=2]);\n"
+            "body = extrude(profile=sk, length=10 deg);",
+            "extrude length must use mm, got deg",
+        ),
+        (
+            CIRCLE
+            + "\nh = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180 deg);",
+            "pocket depth must use mm, got deg",
+        ),
+        (CIRCLE + "\nf = fillet(on=body.edge_top, radius=2 deg);", "fillet radius must use mm, got deg"),
+    ],
+)
+def test_angular_units_are_rejected_for_linear_dimensions(kernel, source, message):
+    _expect_compile_error(kernel, source, message)
+
+
 # --------------------------------------------------------------------------------------
 # Layer separation: registry rejections must NOT be reported as CompileError
 # --------------------------------------------------------------------------------------

@@ -5,3 +5,4 @@ checkpoints/
 data/synth/out/
 *.FCStd1
 *.log
+artifacts/

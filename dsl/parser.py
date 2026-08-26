@@ -20,7 +20,7 @@ _UNITS = {"mm", "deg"}
 _TOKEN_RE = re.compile(
     r"""
       (?P<NUMBER>   -?\d+(?:\.\d+)?)
-    | (?P<IDENT>     [A-Za-z_]\w*)
+    | (?P<IDENT>     [A-Za-z_][A-Za-z0-9_]*)
     | (?P<STRING>    "(?:[^"\\]|\\.)*")
     | (?P<LPAREN>    \()
     | (?P<RPAREN>    \))
@@ -127,7 +127,10 @@ class _Parser:
         if self._peek().kind == end_kind:
             return args
         while True:
-            key = self._expect("IDENT").text
+            key_token = self._expect("IDENT")
+            key = key_token.text
+            if key in args:
+                raise ParseError(f"duplicate argument {key!r} (line {key_token.line})")
             self._expect("EQUALS")
             args[key] = self._parse_value()
             if self._peek().kind == "COMMA":
