@@ -48,15 +48,19 @@
 **W1**
 - [x] 实现 `dsl/compiler.py` 的 §3 子集：AST → FreeCAD Part/PartDesign 调用
 - [x] 跑通 §3 示例（sketch/extrude/pocket/fillet）
-- [ ] 增加统一的二维 `ProfileSpec` 编译层，将 circle/rectangle/polygon/hex 规范化为同一种内部表示
-- [ ] 将所有二维轮廓统一编译为 FreeCAD `Edge → Closed Wire → Planar Face`，并校验闭合、重复点、零面积和自相交
-- [ ] 重构 extrude 和 pocket，使两者复用通用 Face：extrude 生成 Solid，pocket 生成 cutter 后执行布尔差
-- [ ] 支持非 XY 平面的坐标变换，并建立 `face_top`、`edge_top`、`wall` 的稳定 symbolic-role → subshape 解析
-- [ ] 补齐 §4 operation set：revolve/chamfer/groove/edit/replace/pattern/mirror/constraint
-- [ ] 完成 P0 几何真实性门槛：定义 `ResolvedSubshape` 的 provenance、几何签名和基数契约
-- [ ] 为所有已解析参数增加执行效果或显式 `CompileError` 测试，禁止静默忽略
+- [x] 增加统一的二维 `ProfileSpec` 编译层，将 circle/rectangle/polygon/hex 规范化为同一种内部表示
+- [x] 将所有二维轮廓统一编译为 FreeCAD `Edge → Closed Wire → Planar Face`，并校验闭合、重复点、零面积和自相交
+- [x] 重构 extrude 和 pocket，使两者复用通用 Face：extrude 生成 Solid，pocket 生成 cutter 后执行布尔差
+- [x] 支持 circle/rectangle/polygon 在 XY/XZ/YZ 平面的坐标变换
+- [x] 建立 `face_top`、`face_bottom`、`edge_top`、`edge_bottom`、`wall`、`floor` 的 provenance-aware symbolic-role → subshape 解析
+- [x] 实现 transactional edit/replace feature-history rebuild，并在失败时恢复最后一个有效模型
+- [x] 生成独立 P0 可视化验收报告，展示 Profile、role 绑定证据、歧义拒绝和历史重建前后对比
+- [x] 补齐剩余 §4 operation set：revolve/chamfer/groove/pattern/mirror/constraint
+- [x] 定义 `ResolvedSubshape` 的 provenance、几何签名、过滤证据和基数契约，禁止静默选择第一个结果
+- [x] 完成 P0 几何真实性门槛：完整 v1 operations、checked Boolean 前后置条件和显式 no-op/失败契约
+- [x] 为所有已解析参数增加执行效果或显式 `CompileError` 测试，禁止静默忽略
 
-产出与文件：`dsl/compiler.py`、Profile 编译与校验测试、非 XY 平面及连续 modifier 内核测试、P0 验收报告
+产出与文件：`dsl/compiler.py`、`dsl/subshapes.py`、`tests/test_operation_set.py`、Profile 编译与校验测试、非 XY 平面及连续 modifier 内核测试、`docs/p0_geometry_fidelity.md`、`scripts/render_p0_report.py`
 
 **W2**
 - [x] 完善 `dsl/registry.py` 的 `rebind()`：真正改写依赖图与下游 Ref（而不只是返回冲突列表）

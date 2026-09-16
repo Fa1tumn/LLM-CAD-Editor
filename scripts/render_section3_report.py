@@ -1,4 +1,4 @@
-"""Render grammar.md §3 from the real FreeCAD kernel as a visual HTML report."""
+"""Render grammar.md §3 and unified Profile examples as a real-kernel HTML report."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import ast
 import html
 import subprocess
 import sys
+from math import cos, pi, sin
 from pathlib import Path
+from random import Random
 
 import matplotlib
 
@@ -25,11 +27,98 @@ BASE = """sk1 = sketch(plane=XY, circle=[center=origin, r=20]);
 body = extrude(profile=sk1, length=200);"""
 POCKET = BASE + "\nhole1 = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180);"
 FULL = POCKET + "\nedge1 = fillet(on=body.edge_top, radius=2);"
-TEST_NAMES = [
-    "tests/test_kernel_geometry.py::test_section_3_pocket_removes_the_requested_axial_volume",
-    "tests/test_kernel_geometry.py::test_section_3_example_runs_through_fillet_on_the_pocketed_body",
+EDITED = POCKET + "\nedit(target=body, set=length, value=250);"
+REPLACED = POCKET + "\nreplace(target=body, with=extrude(profile=hex(r=20), length=200));"
+
+
+def _random_irregular_polygon_source(seed: int = 20260916) -> str:
+    """Create one reproducible, concave radial polygon for visual regression."""
+    generator = Random(seed)
+    points = []
+    for index in range(10):
+        angle = 2 * pi * index / 10 + generator.uniform(-0.10, 0.10)
+        radius = generator.uniform(4.0, 5.2) if index % 2 == 0 else generator.uniform(1.8, 3.0)
+        points.append((round(radius * cos(angle), 3), round(radius * sin(angle), 3)))
+    min_x = min(x for x, _ in points)
+    min_y = min(y for _, y in points)
+    shifted = [(round(x - min_x, 3), round(y - min_y, 3)) for x, y in points]
+    vertices = ",".join(f"[{x:g},{y:g}]" for x, y in shifted)
+    return f"sk = sketch(plane=XY, polygon=[{vertices}]);\nbody = extrude(profile=sk, length=3.5);"
+
+
+IRREGULAR_SEED = 20260916
+IRREGULAR_SOURCE = _random_irregular_polygon_source(IRREGULAR_SEED)
+PROFILE_CASES = [
+    (
+        "04-rectangle",
+        "Rectangle profile",
+        "sk = sketch(plane=XY, rect=[w=3, h=5]);\nbody = extrude(profile=sk, length=7);",
+        (0.35, 0.72, 0.52),
+    ),
+    (
+        "05-triangle",
+        "Polygon profile · triangle",
+        "sk = sketch(plane=XY, polygon=[[0,0],[3,0],[0,4]]);\nbody = extrude(profile=sk, length=5);",
+        (0.78, 0.48, 0.25),
+    ),
+    (
+        "06-hex",
+        "Inline hex profile",
+        "body = extrude(profile=hex(r=2), length=5);",
+        (0.58, 0.42, 0.82),
+    ),
+    (
+        "07-yz-polygon",
+        "Polygon profile · YZ plane",
+        "sk = sketch(plane=YZ, polygon=[[0,0],[2,0],[0,3]]);\nbody = extrude(profile=sk, length=4);",
+        (0.25, 0.68, 0.75),
+    ),
+    (
+        "08-irregular-polygon",
+        f"Random concave polygon · seed {IRREGULAR_SEED}",
+        IRREGULAR_SOURCE,
+        (0.82, 0.34, 0.42),
+    ),
 ]
-TEST_COMMAND = [sys.executable, "-m", "pytest", "-q", *TEST_NAMES]
+HISTORY_CASES = [
+    (
+        "09-edit-length",
+        "edit · body.length: 200 → 250 mm",
+        POCKET,
+        EDITED,
+        "The downstream pocket is replayed on the taller body.",
+        "side",
+        5,
+        -90,
+    ),
+    (
+        "10-replace-profile",
+        "replace · circular body → hex body",
+        POCKET,
+        REPLACED,
+        "The body changes profile while the downstream pocket is preserved and rebuilt.",
+        "top",
+        90,
+        -90,
+    ),
+]
+TEST_SPECS = [
+    ("tests/test_kernel_geometry.py", "test_section_3_pocket_removes_the_requested_axial_volume"),
+    ("tests/test_kernel_geometry.py", "test_section_3_example_runs_through_fillet_on_the_pocketed_body"),
+    ("tests/test_kernel_geometry.py", "test_rect_sketch_extrudes_to_box_solid"),
+    ("tests/test_kernel_geometry.py", "test_polygon_profile_extrudes_to_the_expected_prism"),
+    ("tests/test_kernel_geometry.py", "test_hex_constructor_extrudes_without_an_intermediate_named_sketch"),
+    ("tests/test_kernel_geometry.py", "test_polygon_profile_respects_a_non_xy_sketch_plane"),
+    ("tests/test_feature_history.py", "test_edit_rebuilds_target_and_downstream_pocket_from_updated_length"),
+    ("tests/test_feature_history.py", "test_replace_circle_extrude_with_hex_and_rebuild_downstream_pocket"),
+]
+TEST_COMMAND = [
+    sys.executable,
+    "-m",
+    "pytest",
+    "-q",
+    *(f"{path}::{name}" for path, name in TEST_SPECS),
+]
 
 
 def _build(source: str):
@@ -38,23 +127,23 @@ def _build(source: str):
 
 def _actual_test_source() -> str:
     """Read the exact pytest functions executed by this report."""
-    test_path = OUT.parent.parent / "tests" / "test_kernel_geometry.py"
-    source = test_path.read_text(encoding="utf-8")
-    lines = source.splitlines()
-    wanted = {name.rsplit("::", 1)[1] for name in TEST_NAMES}
-    tree = ast.parse(source)
-    blocks = [
-        "\n".join(lines[node.lineno - 1 : node.end_lineno])
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted
-    ]
-    if len(blocks) != len(wanted):
-        missing = wanted - {
-            node.name
+    blocks = []
+    paths = dict.fromkeys(path for path, _ in TEST_SPECS)
+    for relative_path in paths:
+        test_path = OUT.parent.parent / relative_path
+        source = test_path.read_text(encoding="utf-8")
+        lines = source.splitlines()
+        wanted = {name for path, name in TEST_SPECS if path == relative_path}
+        tree = ast.parse(source)
+        found = {
+            node.name: "\n".join(lines[node.lineno - 1 : node.end_lineno])
             for node in tree.body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted
         }
-        raise RuntimeError(f"cannot locate report test source: {', '.join(sorted(missing))}")
+        missing = wanted - found.keys()
+        if missing:
+            raise RuntimeError(f"cannot locate report test source: {', '.join(sorted(missing))}")
+        blocks.append(f"# {relative_path}\n\n" + "\n\n".join(found[name] for name in wanted))
     return "\n\n".join(blocks)
 
 
@@ -65,6 +154,7 @@ def _render(
     elev: float = 19,
     azim: float = -55,
     color: tuple[float, float, float] = (0.35, 0.62, 0.88),
+    framing: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> None:
     vertices, faces = shape.tessellate(0.18)
     points = np.array([[vertex.x, vertex.y, vertex.z] for vertex in vertices])
@@ -80,8 +170,9 @@ def _render(
     figure = plt.figure(figsize=(5, 5), dpi=180)
     axis = figure.add_subplot(111, projection="3d")
     axis.add_collection3d(Poly3DCollection(triangles, facecolors=colors, edgecolors=colors))
-    centre = (points.min(axis=0) + points.max(axis=0)) / 2
-    radius = np.max(points.max(axis=0) - points.min(axis=0)) * 0.58
+    frame_min, frame_max = framing if framing is not None else (points.min(axis=0), points.max(axis=0))
+    centre = (frame_min + frame_max) / 2
+    radius = np.max(frame_max - frame_min) * 0.58
     axis.set_xlim(centre[0] - radius, centre[0] + radius)
     axis.set_ylim(centre[1] - radius, centre[1] + radius)
     axis.set_zlim(centre[2] - radius, centre[2] + radius)
@@ -91,6 +182,26 @@ def _render(
     figure.patch.set_alpha(0)
     figure.savefig(path, transparent=True, bbox_inches="tight", pad_inches=0)
     plt.close(figure)
+
+
+def _metrics(shape) -> str:
+    bounds = shape.optimalBoundingBox()
+    return f"""<dl><dt>Type</dt><dd>{shape.ShapeType}</dd><dt>Valid</dt><dd>{shape.isValid()}</dd>
+    <dt>Faces</dt><dd>{len(shape.Faces)}</dd><dt>Solids</dt><dd>{len(shape.Solids)}</dd>
+    <dt>Volume</dt><dd>{shape.Volume:.3f} mm³</dd>
+    <dt>Optimal bounds</dt><dd>{bounds.XLength:.1f} × {bounds.YLength:.1f} × {bounds.ZLength:.1f} mm</dd></dl>"""
+
+
+def _common_framing(*shapes) -> tuple[np.ndarray, np.ndarray]:
+    """Return a shared axis-aligned frame so before/after scale is visually comparable."""
+    bounds = [shape.BoundBox for shape in shapes]
+    frame_min = np.array(
+        [min(bound.XMin for bound in bounds), min(bound.YMin for bound in bounds), min(bound.ZMin for bound in bounds)]
+    )
+    frame_max = np.array(
+        [max(bound.XMax for bound in bounds), max(bound.YMax for bound in bounds), max(bound.ZMax for bound in bounds)]
+    )
+    return frame_min, frame_max
 
 
 def main() -> None:
@@ -111,45 +222,128 @@ def main() -> None:
         shape.exportStl(str(OUT / f"{name}.stl"))
         rows.append((name, shape, source))
 
-    cards = "\n".join(
-        f"""<article><h2>{name.replace('-', ' · ')}</h2>
+    pipeline_cards = "\n".join(
+        f"""<article><h2>{name.replace("-", " · ")}</h2>
         <div class="views"><figure><img src="{name}.png" alt="{name} full model"><figcaption>Full model</figcaption></figure>
         <figure><img src="{name}-top.png" alt="{name} enlarged top"><figcaption>Top 32 mm enlarged</figcaption></figure>
         <figure><img src="{name}-section.png" alt="{name} longitudinal section"><figcaption>Longitudinal section</figcaption></figure></div>
-        <dl><dt>Type</dt><dd>{shape.ShapeType}</dd><dt>Valid</dt><dd>{shape.isValid()}</dd>
-        <dt>Solids</dt><dd>{len(shape.Solids)}</dd><dt>Volume</dt><dd>{shape.Volume:.3f} mm³</dd>
-        <dt>Optimal bounds</dt><dd>{shape.optimalBoundingBox().XLength:.1f} × {shape.optimalBoundingBox().YLength:.1f} × {shape.optimalBoundingBox().ZLength:.1f} mm</dd></dl></article>"""
+        {_metrics(shape)}</article>"""
         for name, shape, _ in rows
     )
-    source = html.escape(FULL)
-    test_run = subprocess.run(TEST_COMMAND, cwd=OUT.parent.parent, capture_output=True, text=True, check=False)
+
+    profile_rows = []
+    for name, label, source, color in PROFILE_CASES:
+        shape = _build(source)
+        _render(shape, OUT / f"{name}.png", color=color)
+        _render(shape, OUT / f"{name}-top.png", elev=90, azim=-90, color=color)
+        _render(shape, OUT / f"{name}-side.png", elev=5, azim=-90, color=color)
+        shape.exportStl(str(OUT / f"{name}.stl"))
+        profile_rows.append((name, label, shape, source))
+
+    profile_cards = "\n".join(
+        f"""<article><h2>{html.escape(label)}</h2>
+        <div class="views"><figure><img src="{name}.png" alt="{html.escape(label)} isometric"><figcaption>Isometric</figcaption></figure>
+        <figure><img src="{name}-top.png" alt="{html.escape(label)} top"><figcaption>Top</figcaption></figure>
+        <figure><img src="{name}-side.png" alt="{html.escape(label)} side"><figcaption>Side</figcaption></figure></div>
+        {_metrics(shape)}<details><summary>DSL input</summary><pre>{html.escape(source)}</pre></details></article>"""
+        for name, label, shape, source in profile_rows
+    )
+
+    history_rows = []
+    for name, label, before_source, after_source, explanation, detail_label, detail_elev, detail_azim in HISTORY_CASES:
+        before_shape = _build(before_source)
+        after_shape = _build(after_source)
+        framing = _common_framing(before_shape, after_shape)
+        _render(before_shape, OUT / f"{name}-before.png", color=(0.48, 0.56, 0.68), framing=framing)
+        _render(after_shape, OUT / f"{name}-after.png", color=(0.20, 0.68, 0.48), framing=framing)
+        _render(
+            before_shape,
+            OUT / f"{name}-before-detail.png",
+            elev=detail_elev,
+            azim=detail_azim,
+            color=(0.48, 0.56, 0.68),
+            framing=framing,
+        )
+        _render(
+            after_shape,
+            OUT / f"{name}-after-detail.png",
+            elev=detail_elev,
+            azim=detail_azim,
+            color=(0.20, 0.68, 0.48),
+            framing=framing,
+        )
+        before_shape.exportStl(str(OUT / f"{name}-before.stl"))
+        after_shape.exportStl(str(OUT / f"{name}-after.stl"))
+        history_rows.append(
+            (
+                name,
+                label,
+                before_shape,
+                after_shape,
+                before_source,
+                after_source,
+                explanation,
+                detail_label,
+            )
+        )
+
+    history_cards = "\n".join(
+        f"""<article class="history-card"><h2>{html.escape(label)}</h2>
+        <p>{html.escape(explanation)}</p>
+        <div class="comparison"><figure><img src="{name}-before.png" alt="{html.escape(label)} before"><figcaption>Before · isometric</figcaption></figure>
+        <figure><img src="{name}-after.png" alt="{html.escape(label)} after"><figcaption>After · isometric</figcaption></figure>
+        <figure><img src="{name}-before-detail.png" alt="{html.escape(label)} before {detail_label}"><figcaption>Before · {detail_label}</figcaption></figure>
+        <figure><img src="{name}-after-detail.png" alt="{html.escape(label)} after {detail_label}"><figcaption>After · {detail_label}</figcaption></figure></div>
+        <div class="metric-pair"><section><h3>Before</h3>{_metrics(before_shape)}</section>
+        <section><h3>After</h3>{_metrics(after_shape)}</section></div>
+        <details><summary>Before / after DSL</summary><h3>Before</h3><pre>{html.escape(before_source)}</pre>
+        <h3>After</h3><pre>{html.escape(after_source)}</pre></details></article>"""
+        for name, label, before_shape, after_shape, before_source, after_source, explanation, detail_label in history_rows
+    )
+
+    section3_source = html.escape(FULL)
+    profile_source = html.escape("\n\n".join(source for _, _, source, _ in PROFILE_CASES))
+    history_source = html.escape("\n\n".join(case[3] for case in HISTORY_CASES))
+    test_run = subprocess.run(
+        TEST_COMMAND, cwd=OUT.parent.parent, capture_output=True, text=True, check=False
+    )
     test_output = html.escape((test_run.stdout + test_run.stderr).strip())
     test_code = html.escape(_actual_test_source())
     test_status = "PASS" if test_run.returncode == 0 else "FAIL"
     test_class = "pass" if test_run.returncode == 0 else "fail"
     report = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-    <meta name="viewport" content="width=device-width"><title>DSL §3 FreeCAD Visual Test</title>
+    <meta name="viewport" content="width=device-width"><title>DSL FreeCAD Visual Tests</title>
     <style>
     :root{{--ink:#172033;--muted:#697386;--blue:#1769e0;--paper:#f4f7fb}}
     *{{box-sizing:border-box}} body{{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 system-ui}}
     main{{max-width:1500px;margin:auto;padding:48px 28px}} h1{{font-size:clamp(30px,5vw,56px);margin:0}}
     .status{{display:inline-block;margin:18px 0 30px;padding:8px 14px;border-radius:99px;font-weight:700}}
     .pass{{background:#dff7e9;color:#17633a}} .fail{{background:#ffe1e1;color:#9d2525}}
-    .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}} article{{background:white;border-radius:18px;padding:20px;box-shadow:0 8px 28px #1d355710}}
+    .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:42px}} article{{background:white;border-radius:18px;padding:20px;box-shadow:0 8px 28px #1d355710}}
+    .history-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-bottom:42px}}
     .views{{display:grid;grid-template-columns:1fr 1fr;gap:8px}} figure{{margin:0;background:#f7f9fc;border-radius:12px;padding:8px}}
     figure:first-child{{grid-column:1/-1}} img{{width:100%;aspect-ratio:1;object-fit:contain}} figcaption{{text-align:center;color:var(--muted);font-size:12px}}
+    .comparison{{display:grid;grid-template-columns:1fr 1fr;gap:8px}} .comparison figure:first-child{{grid-column:auto}}
+    .metric-pair{{display:grid;grid-template-columns:1fr 1fr;gap:18px}} .metric-pair h3{{margin-bottom:4px}}
     h2{{font-size:18px}} dl{{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:14px 0 0}}
     dt{{color:var(--muted)}} dd{{margin:0;text-align:right;font-family:ui-monospace;font-weight:700}}
     pre{{overflow:auto;background:#172033;color:#dce8ff;padding:22px;border-radius:16px;white-space:pre-wrap}}
-    @media(max-width:800px){{.grid{{grid-template-columns:1fr}}}}
-    </style></head><body><main><h1>DSL §3 → FreeCAD</h1>
-    <p>This page runs the real pytest cases and renders the OCCT geometry they verify.</p>
-    <div class="status {test_class}">{test_status} · FreeCAD kernel test</div>
-    <section class="grid">{cards}</section>
+    details{{margin-top:16px}} summary{{cursor:pointer;color:var(--blue);font-weight:700}} details pre{{font-size:12px;padding:14px}}
+    @media(max-width:800px){{.grid,.history-grid{{grid-template-columns:1fr}}}}
+    </style></head><body><main><h1>DSL → FreeCAD Visual Tests</h1>
+    <p>This page runs real pytest cases and renders the OCCT geometry they verify, including the §3 shaft pipeline and the unified Profile compiler.</p>
+    <div class="status {test_class}">{test_status} · {len(TEST_SPECS)} FreeCAD kernel tests</div>
+    <h2>Feature-history rebuild · new</h2><p>These before/after pairs visibly verify transactional edit and replace. Green is the rebuilt result.</p>
+    <section class="history-grid">{history_cards}</section>
+    <h2>§3 shaft pipeline</h2><section class="grid">{pipeline_cards}</section>
+    <h2>2D Profile gallery</h2><p>Rectangle, polygon, inline hex, a non-XY polygon, and a reproducible random concave polygon compiled through Edge → Wire → Face.</p>
+    <section class="grid">{profile_cards}</section>
     <h2>Test code</h2><pre>{test_code}</pre>
     <h2>Live pytest output</h2><pre>{test_output}</pre>
-    <h2>DSL input</h2><pre>{source}</pre>
-    <p>Each stage is also exported as STL for independent inspection in FreeCAD or another CAD viewer.</p>
+    <h2>§3 DSL input</h2><pre>{section3_source}</pre>
+    <h2>Profile gallery DSL input</h2><pre>{profile_source}</pre>
+    <h2>Feature-history DSL input</h2><pre>{history_source}</pre>
+    <p>Every model is also exported as STL for independent inspection in FreeCAD or another CAD viewer.</p>
     </main></body></html>"""
     (OUT / "index.html").write_text(report, encoding="utf-8")
     print(f"wrote visual report to {OUT / 'index.html'}")

@@ -1,7 +1,7 @@
 """Real-kernel geometry regressions for FreeCADBackend (grammar.md §4.1, §7).
 
-Every test here drives an actual OCCT solid through `Part.makeCylinder` /
-`Part.makeBox` and asserts concrete geometry — volume, bounding-box extents,
+Every test here drives an actual OCCT solid through the shared profile Face
+compiler and asserts concrete geometry — volume, bounding-box extents,
 topology counts — rather than merely "it did not raise".
 """
 
@@ -11,7 +11,7 @@ import math
 
 import pytest
 
-from dsl.compiler import FreeCADBackend, compile_program
+from dsl.compiler import FreeCADBackend, ProfileSpec, compile_program
 from dsl.parser import parse
 
 pytest.importorskip("FreeCAD")
@@ -39,7 +39,7 @@ def build(source: str):
     return compile_program(parse(source), FreeCADBackend())
 
 
-# --- circle -> Part.makeCylinder ------------------------------------------------
+# --- analytic circle profile ----------------------------------------------------
 
 
 def test_circle_sketch_extrudes_to_cylinder_solid():
@@ -109,7 +109,7 @@ def test_fillet_dimensions_use_occt_optimal_bounds():
     assert (box.XLength, box.YLength, box.ZLength) == pytest.approx((40.0, 40.0, 200.0))
 
 
-# --- rect -> Part.makeBox -------------------------------------------------------
+# --- rectangle normalized to a polygon profile ---------------------------------
 
 
 def test_rect_sketch_extrudes_to_box_solid():
@@ -161,6 +161,89 @@ def test_mm_suffix_and_bare_dimensions_have_the_same_geometry():
     bare = build("sk = sketch(plane=XY, circle=[center=origin, r=2]);\nb = extrude(profile=sk, length=10);")
     assert with_units.Volume == pytest.approx(math.pi * 2**2 * 10)
     assert with_units.Volume == pytest.approx(bare.Volume)
+
+
+# --- unified Edge -> Wire -> Face profile pipeline ------------------------------
+
+
+def test_named_sketch_is_stored_as_a_normalized_profile_spec():
+    backend = FreeCADBackend()
+    compile_program(
+        parse("sk = sketch(plane=XY, rect=[w=3, h=5]);\nb = extrude(profile=sk, length=7);"),
+        backend,
+    )
+    spec = backend.objects["sk"]
+    assert isinstance(spec, ProfileSpec)
+    assert spec.kind == "polygon"
+    assert spec.vertices == ((0.0, 0.0), (3.0, 0.0), (3.0, 5.0), (0.0, 5.0))
+
+
+def test_circle_rect_and_pocket_do_not_call_primitive_builders(monkeypatch):
+    """All supported profiles must flow through Face.extrude, including pocket cutters."""
+    backend = FreeCADBackend()
+
+    def primitive_forbidden(*_args, **_kwargs):
+        raise AssertionError("primitive shortcut was called")
+
+    monkeypatch.setattr(backend.Part, "makeCylinder", primitive_forbidden)
+    monkeypatch.setattr(backend.Part, "makeBox", primitive_forbidden)
+
+    shaft = compile_program(
+        parse(
+            "sk = sketch(plane=XY, circle=[center=origin, r=5]);\n"
+            "body = extrude(profile=sk, length=10);\n"
+            "hole = pocket(on=body.face_top, circle=[center=body.axis, r=2], depth=4);"
+        ),
+        backend,
+    )
+    assert shaft.Volume == pytest.approx(math.pi * 5**2 * 10 - math.pi * 2**2 * 4)
+
+    box = compile_program(
+        parse("sk = sketch(plane=XY, rect=[w=3, h=5]);\nb = extrude(profile=sk, length=7);"),
+        backend,
+    )
+    assert box.Volume == pytest.approx(105.0)
+
+
+def test_polygon_profile_extrudes_to_the_expected_prism():
+    shape = build(
+        "sk = sketch(plane=XY, polygon=[[0,0],[3,0],[0,4]]);\nbody = extrude(profile=sk, length=5);"
+    )
+    assert shape.ShapeType == "Solid"
+    assert shape.isValid()
+    assert len(shape.Faces) == 5
+    assert shape.Volume == pytest.approx(30.0)
+    assert _extents(shape) == pytest.approx((0.0, 0.0, 0.0, 3.0, 4.0, 5.0))
+
+
+def test_explicitly_closed_polygon_normalizes_to_the_same_profile():
+    open_loop = build(
+        "sk = sketch(plane=XY, polygon=[[0,0],[3,0],[0,4]]);\nbody = extrude(profile=sk, length=5);"
+    )
+    closed_loop = build(
+        "sk = sketch(plane=XY, polygon=[[0,0],[3,0],[0,4],[0,0]]);\nbody = extrude(profile=sk, length=5);"
+    )
+    assert closed_loop.Volume == pytest.approx(open_loop.Volume)
+    assert _extents(closed_loop) == pytest.approx(_extents(open_loop))
+
+
+def test_hex_constructor_extrudes_without_an_intermediate_named_sketch():
+    radius = 2
+    length = 5
+    shape = build(f"body = extrude(profile=hex(r={radius}), length={length});")
+    expected_area = 3 * math.sqrt(3) * radius**2 / 2
+    assert shape.ShapeType == "Solid"
+    assert shape.isValid()
+    assert len(shape.Faces) == 8
+    assert shape.Volume == pytest.approx(expected_area * length)
+
+
+def test_polygon_profile_respects_a_non_xy_sketch_plane():
+    shape = build(
+        "sk = sketch(plane=YZ, polygon=[[0,0],[2,0],[0,3]]);\nbody = extrude(profile=sk, length=4);"
+    )
+    assert shape.Volume == pytest.approx(12.0)
+    assert _extents(shape) == pytest.approx((0.0, 0.0, 0.0, 4.0, 2.0, 3.0))
 
 
 # --- multi-statement programs ---------------------------------------------------
@@ -234,17 +317,6 @@ def test_unnamed_extrude_statement_still_produces_a_real_solid():
     ) == pytest.approx((2.0, 3.0, 4.0))
 
 
-def test_circle_wins_over_rect_when_a_sketch_carries_both():
-    """compiler.py:101 tests `"circle" in sketch` first, whatever the source order."""
-    shape = build(
-        "sk = sketch(plane=XY, rect=[w=100, h=100], circle=[center=origin, r=1]);\n"
-        "b = extrude(profile=sk, length=1);"
-    )
-    assert shape.Volume == pytest.approx(math.pi)
-    assert len(shape.Faces) == 3  # a cylinder, not a 6-faced box
-    assert shape.BoundBox.XLength == pytest.approx(2.0)
-
-
 def test_degenerate_dimensions_are_rejected_symmetrically():
     """A zero radius is refused just like a zero box side.
 
@@ -274,15 +346,11 @@ def test_negative_extrude_length_is_rejected_for_both_profile_shapes():
             build(f"sk = sketch(plane=XY, {profile});\nb = extrude(profile=sk, length=-4);")
 
 
-def test_a_solid_the_kernel_flags_as_invalid_never_escapes():
-    """Dimensions above zero but below OCCT's tolerance still yield an invalid solid.
-
-    `_positive` cannot catch this — it is a kernel tolerance, not a semantic rule —
-    so finish() checks isValid() as the backstop.
-    """
+def test_a_profile_below_kernel_tolerance_never_reaches_extrusion():
+    """Dimensions above zero but below OCCT's tolerance fail as an invalid Face."""
     from dsl.compiler import CompileError
 
-    with pytest.raises(CompileError, match="program produced an invalid solid"):
+    with pytest.raises(CompileError, match="profile did not produce a valid planar face"):
         build(
             "sk = sketch(plane=XY, circle=[center=origin, r=0.0000000001]);\nb = extrude(profile=sk, length=1);"
         )

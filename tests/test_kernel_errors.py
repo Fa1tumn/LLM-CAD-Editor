@@ -56,8 +56,31 @@ DEGENERATE_CIRCLE = "sk = sketch(plane=XY, circle=[center=origin, r=0]);\nb = ex
 
 # Programs both backends ACCEPT.
 BOTH_ACCEPT = {
+    "chamfer": RECT + "\ncut = chamfer(on=body.edge_top, dist=1);",
     "circle_extrude": CIRCLE,
+    "constraint": CIRCLE + "\nconstraint(type=dim, on=body.axis, value=5);",
+    "edit_rebuild": CIRCLE + "\nedit(target=body, set=length, value=250);",
+    "groove": (
+        CIRCLE
+        + "\ngp = sketch(plane=XZ, polygon=[[15,80],[22,80],[22,90],[15,90]]);"
+        + "\ng = groove(on=body.face_top, profile=gp, axis=body.axis);"
+    ),
+    "hex_extrude": "body = extrude(profile=hex(r=4), length=5);",
+    "mirror": RECT + "\nm = mirror(feature=body, plane=YZ);",
+    "pattern": (
+        "sk = sketch(plane=XY, rect=[w=2, h=4]);\n"
+        "body = extrude(profile=sk, length=3);\n"
+        "p = pattern(feature=body, type=circular, count=4, angle=90);"
+    ),
+    "polygon_extrude": (
+        "sk = sketch(plane=XY, polygon=[[0,0],[3,0],[0,4]]);\nbody = extrude(profile=sk, length=5);"
+    ),
     "rect_extrude": RECT,
+    "replace_rebuild": CIRCLE + "\nreplace(target=body, with=extrude(profile=sk, length=300));",
+    "revolve": (
+        "sk = sketch(plane=XY, polygon=[[0,0],[4,0],[4,2],[0,2]]);\n"
+        "body = revolve(profile=sk, axis=origin, angle=360);"
+    ),
     "unnamed_extrude": UNNAMED,
     "section_3": (
         CIRCLE
@@ -129,54 +152,9 @@ BACKEND_INDEPENDENT_REJECTS = {
 # Programs only the KERNEL backend rejects. SymbolicBackend accepts all of them, so it is NOT a
 # faithful proxy here -- see test_symbolic_backend_accepts_every_kernel_only_rejection.
 KERNEL_ONLY_REJECTS = {
-    "edit": (
-        CIRCLE + "\nedit(target=body, set=length, value=250);",
-        "FreeCAD parameter edit requires feature-history rebuild",
-    ),
-    "replace": (
-        CIRCLE + "\nreplace(target=body, with=extrude(profile=sk, length=300));",
-        "FreeCAD replacement requires feature-history rebuild",
-    ),
-    "chamfer_unnamed": (
-        CIRCLE + "\nchamfer(on=body.edge_top, dist=1.5);",
-        "FreeCAD backend operation not implemented: chamfer",
-    ),
-    "revolve": (
-        "sk = sketch(plane=XY, circle=[center=origin, r=20]);\n"
-        "body = revolve(profile=sk, axis=origin, angle=90);",
-        "FreeCAD backend operation not implemented: revolve",
-    ),
-    "groove": (
-        "sk = sketch(plane=XY, circle=[center=origin, r=2]);\n"
-        "b = extrude(profile=sk, length=9);\n"
-        "g = groove(on=b.face_top, profile=sk, axis=b.axis);",
-        "FreeCAD backend operation not implemented: groove",
-    ),
-    "pattern": (
-        "sk = sketch(plane=XY, circle=[center=origin, r=2]);\n"
-        "b = extrude(profile=sk, length=9);\n"
-        "p = pattern(feature=b, type=circular, count=4, angle=90);",
-        "FreeCAD backend operation not implemented: pattern",
-    ),
-    "mirror": (
-        "sk = sketch(plane=XY, circle=[center=origin, r=2]);\n"
-        "b = extrude(profile=sk, length=9);\n"
-        "m = mirror(feature=b, plane=XY);",
-        "FreeCAD backend operation not implemented: mirror",
-    ),
-    "constraint": (
-        "sk = sketch(plane=XY, circle=[center=origin, r=2]);\n"
-        "b = extrude(profile=sk, length=9);\n"
-        "constraint(type=dim, on=b.axis, value=5);",
-        "FreeCAD backend operation not implemented: constraint",
-    ),
-    "polygon_sketch": (
-        "sk = sketch(plane=XY, polygon=[[0,0],[1,0],[1,1]]);\nbody = extrude(profile=sk, length=5);",
-        "FreeCAD backend currently supports circle/rect sketches",
-    ),
     "empty_sketch": (
         "sk = sketch(plane=XY);\nbody = extrude(profile=sk, length=5);",
-        "FreeCAD backend currently supports circle/rect sketches",
+        "sketch must define exactly one of circle, rect, or polygon",
     ),
     "symbolic_length": (
         "sk = sketch(plane=XY, circle=[center=origin, r=20]);\nbody = extrude(profile=sk, length=depth);",
@@ -203,11 +181,6 @@ KERNEL_ONLY_REJECTS = {
         "b1 = extrude(profile=sk, length=5);\n"
         "b2 = extrude(profile=b1, length=5);",
         "extrude profile is not a compiled sketch: b1",
-    ),
-    "profile_is_a_nested_opcall": (
-        "b = extrude(profile=hex(r=20), length=5);",
-        "extrude profile is not a compiled sketch: OpCall(op='hex', "
-        "args={'r': Quantity(value=20.0, unit=None)})",
     ),
     "profile_absent": (
         "sk = sketch(plane=XY, circle=[center=origin, r=20]);\nb = extrude(length=5);",
@@ -243,15 +216,37 @@ KERNEL_ONLY_REJECTS = {
     "subtolerance_box": (
         "sk = sketch(plane=XY, rect=[w=0.0000000001, h=0.0000000001]);\n"
         "b = extrude(profile=sk, length=0.0000000001);",
-        "backend execution failed: length of box too small",
+        "profile did not produce a valid planar face",
     ),
     "subtolerance_cylinder": (
         "sk = sketch(plane=XY, circle=[center=origin, r=0.0000000001]);\nb = extrude(profile=sk, length=1);",
-        "program produced an invalid solid",
+        "profile did not produce a valid planar face",
     ),
     "circle_given_as_bare_list": (
         "sk = sketch(plane=XY, circle=[20]);\nb = extrude(profile=sk, length=3);",
-        "backend execution failed: 'list' object has no attribute 'get'",
+        "circle must be [center=..., r=...]",
+    ),
+    "polygon_duplicate_point": (
+        "sk = sketch(plane=XY, polygon=[[0,0],[2,0],[2,2],[2,0],[0,2]]);\nb = extrude(profile=sk, length=1);",
+        "polygon contains duplicate points",
+    ),
+    "polygon_self_intersection": (
+        "sk = sketch(plane=XY, polygon=[[0,0],[2,2],[0,2],[2,0]]);\nb = extrude(profile=sk, length=1);",
+        "polygon is self-intersecting",
+    ),
+    "polygon_zero_area": (
+        "sk = sketch(plane=XY, polygon=[[0,0],[1,0],[2,0]]);\nb = extrude(profile=sk, length=1);",
+        "polygon has zero area",
+    ),
+    "ambiguous_sketch": (
+        "sk = sketch(plane=XY, rect=[w=2, h=3], circle=[center=origin, r=1]);\n"
+        "b = extrude(profile=sk, length=1);",
+        "sketch must define exactly one of circle, rect, or polygon",
+    ),
+    "unknown_sketch_arg": (
+        'sk = sketch(plane=XY, circle=[center=origin, r=1], color="red");\n'
+        "b = extrude(profile=sk, length=1);",
+        "sketch has unsupported arg(s): color",
     ),
 }
 
@@ -264,63 +259,11 @@ def _expect_compile_error(kernel, source: str, message: str) -> CompileError:
 
 
 # --------------------------------------------------------------------------------------
-# edit / replace: unconditionally rejected by the kernel backend
-# --------------------------------------------------------------------------------------
-
-
-def test_edit_requires_feature_history_rebuild(kernel):
-    _expect_compile_error(
-        kernel,
-        CIRCLE + "\nedit(target=body, set=length, value=250);",
-        "FreeCAD parameter edit requires feature-history rebuild",
-    )
-
-
-def test_replace_requires_feature_history_rebuild(kernel):
-    _expect_compile_error(
-        kernel,
-        CIRCLE + "\nreplace(target=body, with=extrude(profile=sk, length=300));",
-        "FreeCAD replacement requires feature-history rebuild",
-    )
-
-
-# --------------------------------------------------------------------------------------
-# Unimplemented ops (M2 W1 backlog: chamfer / pattern / mirror ...)
-# --------------------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        "chamfer_unnamed",
-        "revolve",
-        "groove",
-        "pattern",
-        "mirror",
-        "constraint",
-    ],
-)
-def test_unimplemented_op_rejected(kernel, case):
-    source, message = KERNEL_ONLY_REJECTS[case]
-    _expect_compile_error(kernel, source, message)
-
-
-def test_unimplemented_op_message_names_the_op_not_the_auto_name(kernel):
-    """An unnamed edit_op statement becomes `__op_<index>`; the message must still cite the op."""
-    error = _expect_compile_error(
-        kernel,
-        CIRCLE + "\nchamfer(on=body.edge_top, dist=1.5);",
-        "FreeCAD backend operation not implemented: chamfer",
-    )
-    assert "__op_" not in str(error)
-
-
-# --------------------------------------------------------------------------------------
 # Unsupported sketch shapes
 # --------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("case", ["polygon_sketch", "empty_sketch"])
+@pytest.mark.parametrize("case", ["ambiguous_sketch", "empty_sketch", "unknown_sketch_arg"])
 def test_unsupported_sketch_shape_rejected(kernel, case):
     source, message = KERNEL_ONLY_REJECTS[case]
     _expect_compile_error(kernel, source, message)
@@ -355,7 +298,6 @@ def test_non_numeric_quantity_rejected(kernel, case):
     "case",
     [
         "profile_is_a_solid",
-        "profile_is_a_nested_opcall",
         "profile_absent",
         "profile_is_a_derived_role",
         "profile_is_a_literal_root",
@@ -378,21 +320,65 @@ def test_program_produced_no_solid(kernel, case):
 
 
 # --------------------------------------------------------------------------------------
-# Errors raised inside OCCT / Python and wrapped by compile_program's blanket handler
+# Profile-schema and kernel-tolerance errors
 # --------------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("case", ["subtolerance_box"])
-def test_occt_error_wrapped_as_compile_error(kernel, case):
+def test_subtolerance_profile_error_is_a_compile_error(kernel, case):
     source, message = KERNEL_ONLY_REJECTS[case]
     _expect_compile_error(kernel, source, message)
 
 
-def test_python_error_wrapped_as_compile_error(kernel):
-    """A bare-list `circle=` is legal grammar §3 but blows up inside feature(); it must not escape."""
+def test_malformed_circle_profile_has_an_explicit_compile_error(kernel):
+    """A bare-list `circle=` is grammar-valid but fails the kernel profile schema."""
     source, message = KERNEL_ONLY_REJECTS["circle_given_as_bare_list"]
     error = _expect_compile_error(kernel, source, message)
-    assert isinstance(error.__cause__, AttributeError)
+    assert error.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    "case", ["polygon_duplicate_point", "polygon_self_intersection", "polygon_zero_area"]
+)
+def test_invalid_polygon_rejected_before_occt(kernel, case):
+    source, message = KERNEL_ONLY_REJECTS[case]
+    error = _expect_compile_error(kernel, source, message)
+    assert error.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        (
+            "sk = sketch(plane=XY, circle=[center=origin, r=2, diameter=4]);\n"
+            "b = extrude(profile=sk, length=3);",
+            "circle has unsupported arg(s): diameter",
+        ),
+        (
+            "sk = sketch(plane=XY, rect=[w=2, h=3, depth=4]);\nb = extrude(profile=sk, length=3);",
+            "rect has unsupported arg(s): depth",
+        ),
+        (
+            "b = extrude(profile=hex(r=2, sides=6), length=3);",
+            "hex has unsupported arg(s): sides",
+        ),
+        (
+            "sk = sketch(plane=XY, circle=[center=origin, r=2]);\n"
+            "b = extrude(profile=sk, length=3, taper=1);",
+            "extrude has unsupported arg(s): taper",
+        ),
+        (
+            CIRCLE + "\nh = pocket(on=body.face_top, circle=[center=body.axis, r=2], depth=3, mode=1);",
+            "pocket has unsupported arg(s): mode",
+        ),
+        (
+            CIRCLE + "\nf = fillet(on=body.edge_top, radius=2, transitions=1);",
+            "fillet has unsupported arg(s): transitions",
+        ),
+    ],
+)
+def test_implemented_operations_never_silently_ignore_arguments(kernel, source, message):
+    _expect_compile_error(kernel, source, message)
 
 
 def test_degenerate_dimensions_are_rejected_symmetrically(kernel):
@@ -413,21 +399,22 @@ def test_degenerate_dimensions_are_rejected_symmetrically(kernel):
     ("source", "message"),
     [
         (
-            "sk = sketch(plane=XY, circle=[center=origin, r=2 deg]);\n"
-            "body = extrude(profile=sk, length=10);",
+            "sk = sketch(plane=XY, circle=[center=origin, r=2 deg]);\nbody = extrude(profile=sk, length=10);",
             "circle r must use mm, got deg",
         ),
         (
-            "sk = sketch(plane=XY, circle=[center=origin, r=2]);\n"
-            "body = extrude(profile=sk, length=10 deg);",
+            "sk = sketch(plane=XY, circle=[center=origin, r=2]);\nbody = extrude(profile=sk, length=10 deg);",
             "extrude length must use mm, got deg",
         ),
         (
-            CIRCLE
-            + "\nh = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180 deg);",
+            CIRCLE + "\nh = pocket(on=body.face_top, circle=[center=body.axis, r=6], depth=180 deg);",
             "pocket depth must use mm, got deg",
         ),
         (CIRCLE + "\nf = fillet(on=body.edge_top, radius=2 deg);", "fillet radius must use mm, got deg"),
+        (
+            "sk = sketch(plane=XY, polygon=[[0,0],[2 deg,0],[0,2]]);\nbody = extrude(profile=sk, length=1);",
+            "polygon point 1 x must use mm, got deg",
+        ),
     ],
 )
 def test_angular_units_are_rejected_for_linear_dimensions(kernel, source, message):
@@ -525,7 +512,7 @@ def test_symbolic_backend_accepts_every_kernel_only_rejection(kernel, case):
 
     It has no kernel, so it accepts every program FreeCADBackend rejects inside
     feature()/edit()/replace()/finish(). This test pins the exact divergence set: if a future
-    milestone teaches the kernel backend a new op (e.g. `pocket`), this test fails and the case
+        milestone teaches the kernel backend a new op (e.g. `chamfer`), this test fails and the case
     must move into BOTH_ACCEPT.
     """
     source, message = KERNEL_ONLY_REJECTS[case]

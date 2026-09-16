@@ -36,7 +36,9 @@ LLM-CAD-Editor/
 ├── tests/                 # unit tests (pytest)
 ├── docs/
 │   ├── weekly_plan.md     # week-by-week execution plan, Chinese (expands the milestones below)
-│   └── weekly_plan_en.md  # same plan, English
+│   ├── weekly_plan_en.md  # same plan, English
+│   ├── p0_geometry_fidelity.md # live P0 acceptance matrix
+│   └── p0_visual_report.md     # P0 HTML/PNG/STL report workflow
 ├── config/
 │   └── default.yaml       # config: model, paths, verification thresholds
 ├── dsl/                   # [RQ1] DSL definition & parser
@@ -44,7 +46,8 @@ LLM-CAD-Editor/
 │   ├── ast.py             #   AST nodes
 │   ├── parser.py          #   DSL text → AST
 │   ├── compiler.py        #   AST → FreeCAD/OCCT execution
-│   └── registry.py        #   reference registry: symbolic names + dependency graph
+│   ├── registry.py        #   reference registry: symbolic names + dependency graph
+│   └── subshapes.py       #   provenance-aware symbolic role → OCCT subshape resolver
 ├── data/
 │   ├── synth/             #   compound edit-pair synthesis
 │   ├── instruct/          #   3-level instruction generation (VLM)
@@ -152,3 +155,4 @@ The `/setup-env` skill runs and checks all of the above.
 
 See `docs/compiler_status.md` for the exact implemented operation subset and known geometry
 limitations. See `docs/visual_test_guide.md` for the HTML/PNG/STL visual test workflow.
+The standalone P0 acceptance dashboard is documented in `docs/p0_visual_report.md`.

@@ -105,6 +105,8 @@ root; the dated folders under `changelog/` are the real location.
 
 ## Current state
 
-M1 done. M2 partially done — the next explicit task is M2 W1: the full FreeCAD Part/PartDesign op set
-(`pocket`, `fillet`, `chamfer`, `pattern`, `mirror`, history rebuild). `editor/`, `verify/`, `deploy/`,
-and `data/` are stubs with no test coverage.
+M1 done. M2 compiler/evaluation foundations and the P0 geometry-fidelity gate are complete. The
+FreeCAD backend implements the full v1 operation set, checked CSG pre/postconditions, stable roles,
+and transactional edit/replace history rebuild. `scripts/render_p0_report.py` visualizes the passing
+P0 matrix, operation gallery, and role-binding evidence. Next preserve these contracts while starting
+P1 typed units and P2 selector evidence. `editor/`, `verify/`, `deploy/`, and `data/` remain mostly stubs.

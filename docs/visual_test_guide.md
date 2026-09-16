@@ -1,13 +1,18 @@
 # FreeCAD Visual Test Guide
 
-This guide explains how to generate and open the HTML visual test report for the DSL §3 example:
+This guide explains how to generate and open the HTML visual test report for the DSL §3 example and
+the unified 2D Profile compiler and transactional feature-history rebuild:
 
 ```text
 sketch -> extrude -> pocket -> fillet
+circle / rectangle / polygon / hex -> Edge -> Wire -> Face -> extrude
+edit / replace -> replay downstream feature history
 ```
 
 The report uses geometry produced by the real FreeCAD/OCCT kernel. It includes full-model renders,
-enlarged top views, longitudinal sections, geometry measurements, test code, and live pytest output.
+enlarged top views, longitudinal sections, a rectangle/triangle/hex/non-XY/random-concave gallery, geometry
+measurements, test code, and live pytest output.
+The first section gives fixed-scale before/after comparisons for `edit` and `replace`.
 
 ## Prerequisites
 
@@ -42,9 +47,9 @@ Run:
 The command performs the following actions:
 
 1. Compiles the DSL programs with `FreeCADBackend`.
-2. Runs the real pocket and fillet pytest cases.
+2. Runs eight real-kernel pytest cases for pocket, fillet, profiles, non-XY placement, edit, and replace.
 3. Tessellates the resulting OCCT solids.
-4. Generates full-model, enlarged-top, and longitudinal-section PNG images.
+4. Generates full-model, enlarged-top, longitudinal-section, isometric, top, and side PNG images.
 5. Exports each stage as an STL file.
 6. Writes the test code, pytest output, geometry data, and images into an HTML report.
 
@@ -101,12 +106,18 @@ http://localhost:8000/artifacts/section3_visual/
 
 ## Run the Tests Without Generating the Report
 
-Run only the two §3 kernel tests:
+Run the same eight kernel tests used by the report:
 
 ```bash
 .venv/bin/python -m pytest -q \
   tests/test_kernel_geometry.py::test_section_3_pocket_removes_the_requested_axial_volume \
-  tests/test_kernel_geometry.py::test_section_3_example_runs_through_fillet_on_the_pocketed_body
+  tests/test_kernel_geometry.py::test_section_3_example_runs_through_fillet_on_the_pocketed_body \
+  tests/test_kernel_geometry.py::test_rect_sketch_extrudes_to_box_solid \
+  tests/test_kernel_geometry.py::test_polygon_profile_extrudes_to_the_expected_prism \
+  tests/test_kernel_geometry.py::test_hex_constructor_extrudes_without_an_intermediate_named_sketch \
+  tests/test_kernel_geometry.py::test_polygon_profile_respects_a_non_xy_sketch_plane \
+  tests/test_feature_history.py::test_edit_rebuilds_target_and_downstream_pocket_from_updated_length \
+  tests/test_feature_history.py::test_replace_circle_extrude_with_hex_and_rebuild_downstream_pocket
 ```
 
 Run the complete test suite:
@@ -133,6 +144,13 @@ All report files are written to `artifacts/section3_visual/`:
 | `03-fillet.png` | Full shaft after top-edge filleting |
 | `*-top.png` | Enlarged top 32 mm of each stage |
 | `*-section.png` | Longitudinal section of each stage |
+| `04-rectangle.*` | Rectangle Profile render and STL |
+| `05-triangle.*` | Polygon triangle Profile render and STL |
+| `06-hex.*` | Inline hex Profile render and STL |
+| `07-yz-polygon.*` | Non-XY polygon Profile render and STL |
+| `08-irregular-polygon.*` | Reproducible random concave polygon (seed `20260916`) |
+| `09-edit-length-*` | Fixed-scale before/after render for a 200 → 250 mm edit |
+| `10-replace-profile-*` | Before/after render for circle → hex replacement |
 | `*.stl` | Geometry that can be opened in FreeCAD or another CAD viewer |
 
 ## Refresh After Code Changes

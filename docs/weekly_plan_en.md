@@ -48,15 +48,19 @@ Deliverable & Files: `dsl/parser.py`
 **W1**
 - [x] Implement the §3 subset in `dsl/compiler.py`: AST → FreeCAD Part/PartDesign calls
 - [x] Get the §3 example (sketch/extrude/pocket/fillet) running end to end
-- [ ] Add a unified 2D `ProfileSpec` compiler layer that normalizes circle/rectangle/polygon/hex into one internal representation
-- [ ] Compile every 2D profile through FreeCAD `Edge → Closed Wire → Planar Face`, validating closure, duplicate points, zero area, and self-intersection
-- [ ] Refactor extrude and pocket to share the general Face path: extrude creates a Solid, while pocket creates a cutter and performs a boolean difference
-- [ ] Support coordinate transforms for non-XY planes and add stable symbolic-role → subshape resolution for `face_top`, `edge_top`, and `wall`
-- [ ] Complete the §4 operation set: revolve/chamfer/groove/edit/replace/pattern/mirror/constraint
-- [ ] Complete the P0 geometry-fidelity gate: define provenance, geometric signatures, and cardinality for `ResolvedSubshape`
-- [ ] Test every parsed argument for an observable effect or an explicit `CompileError`; never ignore it silently
+- [x] Add a unified 2D `ProfileSpec` compiler layer that normalizes circle/rectangle/polygon/hex into one internal representation
+- [x] Compile every 2D profile through FreeCAD `Edge → Closed Wire → Planar Face`, validating closure, duplicate points, zero area, and self-intersection
+- [x] Refactor extrude and pocket to share the general Face path: extrude creates a Solid, while pocket creates a cutter and performs a boolean difference
+- [x] Support circle/rectangle/polygon coordinate transforms on the XY/XZ/YZ planes
+- [x] Add provenance-aware symbolic-role → subshape resolution for `face_top`, `face_bottom`, `edge_top`, `edge_bottom`, `wall`, and `floor`
+- [x] Implement transactional edit/replace feature-history rebuild with restoration of the last valid model on failure
+- [x] Generate a standalone P0 visual acceptance report for profiles, role-binding evidence, ambiguity rejection, and history rebuild comparisons
+- [x] Complete the remaining §4 operation set: revolve/chamfer/groove/pattern/mirror/constraint
+- [x] Define `ResolvedSubshape` provenance, geometric signatures, filter evidence, and cardinality; never silently choose the first result
+- [x] Complete the P0 geometry-fidelity gate: full v1 operations, checked Boolean pre/postconditions, and explicit no-op/failure contracts
+- [x] Test every parsed argument for an observable effect or an explicit `CompileError`; never ignore it silently
 
-Deliverable & Files: `dsl/compiler.py`, Profile compiler/validation tests, real-kernel tests for non-XY planes and chained modifiers, and the P0 acceptance report
+Deliverable & Files: `dsl/compiler.py`, `dsl/subshapes.py`, `tests/test_operation_set.py`, Profile compiler/validation tests, real-kernel tests for non-XY planes and chained modifiers, `docs/p0_geometry_fidelity.md`, and `scripts/render_p0_report.py`
 
 **W2**
 - [x] Flesh out `dsl/registry.py` `rebind()`: actually rewrite the dependency graph and downstream Refs (not just return conflicts)
